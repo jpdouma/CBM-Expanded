@@ -9,6 +9,7 @@ import { useTheme } from '../context/ThemeProvider';
 interface AppHeaderProps {
     activeSetting: 'hub' | 'dryingBeds' | 'clients' | 'financiers' | 'storageLocations' | 'farmers' | 'users' | 'roles' | 'costing' | 'pricing' | null;
     onSettingsClick: () => void;
+    onActivityLogClick: () => void;
     onImport: () => void;
     onExport: () => void;
     
@@ -24,6 +25,7 @@ interface AppHeaderProps {
 export const AppHeader: React.FC<AppHeaderProps> = ({ 
     activeSetting, 
     onSettingsClick, 
+    onActivityLogClick,
     onImport, 
     onExport,
     projects,
@@ -174,6 +176,16 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             </div>
 
             <div className="flex items-center gap-2">
+                <button
+                    onClick={onActivityLogClick}
+                    className="p-2 text-gray-500 dark:text-gray-400 hover:text-brand-blue dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
+                    title="Activity Log"
+                >
+                    <Icon name="clipboard" className="w-5 h-5" />
+                </button>
+
+                <div className="h-8 w-px bg-gray-200 dark:bg-gray-700 mx-1"></div>
+
                 <button
                     onClick={toggleTheme}
                     className="p-2 text-gray-500 dark:text-gray-400 hover:text-brand-blue dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"

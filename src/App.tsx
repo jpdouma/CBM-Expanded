@@ -32,7 +32,12 @@ import type { ProcessingTier } from './types';
 
 type ActiveSetting = 'hub' | 'dryingBeds' | 'clients' | 'financiers' | 'storageLocations' | 'farmers' | 'users' | 'roles' | 'costing' | 'pricing' | null;
 type ActiveSetupTab = 'setup' | 'client' | 'financing';
-type MainTab = 'setup' | 'dataEntry' | 'cashDashboard' | 'opsDashboard' | 'activityLog' | 'globalInventory' | 'paymentPipeline' | 'qualityApprovals' | 'outsourcedCosts';
+type Module = 'OPERATIONS' | 'APPROVALS' | 'FINANCE' | 'DASHBOARDS' | 'ACTIVITY_LOG' | 'GLOBAL_INVENTORY';
+type SubTab = 
+    | 'cherryDeliveries' | 'processingWorkflow' // OPERATIONS
+    | 'qualityApprovals' | 'pendingPayments'    // APPROVALS
+    | 'paymentsAdvances' | 'outsourcedCosts'    // FINANCE
+    | 'opsDashboard' | 'cashDashboard';         // DASHBOARDS
 
 const SettingsView: React.FC<{ activeSetting: ActiveSetting, setActiveSetting: (setting: ActiveSetting) => void, state: any, dispatch: any }> = ({ activeSetting, setActiveSetting, state, dispatch }) => (
     <div className="bg-white dark:bg-brand-dark rounded-xl shadow-md p-6 border border-gray-200 dark:border-gray-700">
@@ -56,7 +61,8 @@ const MainAppContent: React.FC = () => {
     const { canEdit, canViewFinancials, isClientViewer, assignedClientId, canManageSettings, canApproveSteps, canManageFinances } = usePermissions();
 
     const [activeSetupTab, setActiveSetupTab] = useState<ActiveSetupTab>('setup');
-    const [mainTab, setMainTab] = useState<MainTab>(isClientViewer ? 'opsDashboard' : 'setup');
+    const [activeModule, setActiveModule] = useState<Module>(isClientViewer ? 'DASHBOARDS' : 'OPERATIONS');
+    const [activeSubTab, setActiveSubTab] = useState<string>(isClientViewer ? 'opsDashboard' : 'cherryDeliveries');
     const [activeSetting, setActiveSetting] = useState<ActiveSetting>(null);
 
     const settingsPanelRef = useRef<HTMLDivElement>(null);
@@ -84,10 +90,10 @@ const MainAppContent: React.FC = () => {
 
     // Force tab switch if current tab is restricted
     useEffect(() => {
-        if (!canViewFinancials && (mainTab === 'cashDashboard')) {
-            setMainTab('opsDashboard');
+        if (!canViewFinancials && (activeSubTab === 'cashDashboard')) {
+            setActiveSubTab('opsDashboard');
         }
-    }, [canViewFinancials, mainTab]);
+    }, [canViewFinancials, activeSubTab]);
 
     if (!isAuthenticated) {
         return <LoginScreen />;
@@ -112,14 +118,35 @@ const MainAppContent: React.FC = () => {
             : [...selectedProjectIds, projectId];
         dispatch({ type: 'SET_SELECTED_PROJECT_IDS', payload: { ids: newSelection } });
         
-        if (newSelection.length > 1 && (mainTab === 'setup' || mainTab === 'dataEntry')) {
-            setMainTab(canViewFinancials ? 'cashDashboard' : 'opsDashboard');
+        if (newSelection.length > 1 && (activeModule === 'OPERATIONS')) {
+            setActiveModule('DASHBOARDS');
+            setActiveSubTab(canViewFinancials ? 'cashDashboard' : 'opsDashboard');
         }
     };
     
     const handleSelectAllProjects = () => {
         dispatch({ type: 'SET_SELECTED_PROJECT_IDS', payload: { ids: visibleProjects.map(p => p.id) } });
-        setMainTab(canViewFinancials ? 'cashDashboard' : 'opsDashboard'); 
+        setActiveModule('DASHBOARDS');
+        setActiveSubTab(canViewFinancials ? 'cashDashboard' : 'opsDashboard'); 
+    };
+
+    const handleModuleSwitch = (module: Module) => {
+        setActiveModule(module);
+        // Set default sub-tab for the module
+        switch (module) {
+            case 'OPERATIONS':
+                setActiveSubTab('cherryDeliveries');
+                break;
+            case 'APPROVALS':
+                setActiveSubTab('qualityApprovals');
+                break;
+            case 'FINANCE':
+                setActiveSubTab('paymentsAdvances');
+                break;
+            case 'DASHBOARDS':
+                setActiveSubTab(canViewFinancials ? 'cashDashboard' : 'opsDashboard');
+                break;
+        }
     };
     
     const singleActiveProject = activeProjects.length === 1 ? activeProjects[0] : null;
@@ -194,6 +221,7 @@ const MainAppContent: React.FC = () => {
             <AppHeader
                 activeSetting={activeSetting}
                 onSettingsClick={() => setActiveSetting(activeSetting ? null : 'hub')}
+                onActivityLogClick={() => setActiveModule('ACTIVITY_LOG')}
                 onImport={handleImportBackup}
                 onExport={handleExportBackup}
                 projects={visibleProjects}
@@ -220,64 +248,56 @@ const MainAppContent: React.FC = () => {
                     <div className="w-full">
                         {activeProjects.length > 0 ? (
                              <div className="space-y-6">
-                                {/* Tab Navigation */}
+                                {/* Module Navigation */}
                                 <div className="bg-white dark:bg-brand-dark rounded-xl shadow-md sticky top-[72px] z-10 overflow-x-auto border border-gray-200 dark:border-gray-700">
                                     <nav className="flex min-w-max px-2" role="tablist" aria-label="Main navigation">
-                                        {!isClientViewer && <TabButton tabId="setup" activeTab={mainTab} onClick={(tab) => setMainTab(tab)} variant="main" disabled={isMultiSelect}>Project Setup</TabButton>}
-                                        {!isClientViewer && <TabButton tabId="dataEntry" activeTab={mainTab} onClick={(tab) => setMainTab(tab)} variant="main" disabled={isMultiSelect}>Data Entry</TabButton>}
-                                        {canViewFinancials && <TabButton tabId="cashDashboard" activeTab={mainTab} onClick={(tab) => setMainTab(tab)} variant="main">Cash Dashboard</TabButton>}
-                                        {canViewFinancials && <TabButton tabId="paymentPipeline" activeTab={mainTab} onClick={(tab) => setMainTab(tab)} variant="main">Payment Pipeline</TabButton>}
-                                        <TabButton tabId="opsDashboard" activeTab={mainTab} onClick={(tab) => setMainTab(tab)} variant="main">Operational Dashboard</TabButton>
-                                        {canApproveSteps && <TabButton tabId="qualityApprovals" activeTab={mainTab} onClick={(tab) => setMainTab(tab)} variant="main">Quality Approvals</TabButton>}
-                                        {canManageFinances && <TabButton tabId="outsourcedCosts" activeTab={mainTab} onClick={(tab) => setMainTab(tab)} variant="main">Outsourced Costs</TabButton>}
-                                        <TabButton tabId="activityLog" activeTab={mainTab} onClick={(tab) => setMainTab(tab)} variant="main">Activity Log</TabButton>
+                                        <TabButton tabId="OPERATIONS" activeTab={activeModule} onClick={(m) => handleModuleSwitch(m as Module)} variant="main">Operations</TabButton>
+                                        <TabButton tabId="APPROVALS" activeTab={activeModule} onClick={(m) => handleModuleSwitch(m as Module)} variant="main">Approvals</TabButton>
+                                        <TabButton tabId="FINANCE" activeTab={activeModule} onClick={(m) => handleModuleSwitch(m as Module)} variant="main">Finance</TabButton>
+                                        <TabButton tabId="DASHBOARDS" activeTab={activeModule} onClick={(m) => handleModuleSwitch(m as Module)} variant="main">Dashboards</TabButton>
                                         
                                         {isMultiSelect && (
-                                            <TabButton tabId="globalInventory" activeTab={mainTab} onClick={(tab) => setMainTab(tab)} variant="main">Global Inventory</TabButton>
+                                            <TabButton tabId="GLOBAL_INVENTORY" activeTab={activeModule} onClick={() => setActiveModule('GLOBAL_INVENTORY')} variant="main">Global Inventory</TabButton>
                                         )}
                                     </nav>
                                 </div>
+
+                                {/* Sub-Navigation */}
+                                {activeModule !== 'ACTIVITY_LOG' && activeModule !== 'GLOBAL_INVENTORY' && (
+                                    <div className="bg-white dark:bg-brand-dark rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-x-auto">
+                                        <nav className="flex min-w-max px-4 py-2 gap-2">
+                                            {activeModule === 'OPERATIONS' && (
+                                                <>
+                                                    <TabButton tabId="cherryDeliveries" activeTab={activeSubTab} onClick={(s) => setActiveSubTab(s)} variant="sub" disabled={isMultiSelect}>Cherry Deliveries</TabButton>
+                                                    <TabButton tabId="processingWorkflow" activeTab={activeSubTab} onClick={(s) => setActiveSubTab(s)} variant="sub" disabled={isMultiSelect}>Processing Workflow</TabButton>
+                                                </>
+                                            )}
+                                            {activeModule === 'APPROVALS' && (
+                                                <>
+                                                    <TabButton tabId="qualityApprovals" activeTab={activeSubTab} onClick={(s) => setActiveSubTab(s)} variant="sub">Quality Approvals</TabButton>
+                                                    <TabButton tabId="pendingPayments" activeTab={activeSubTab} onClick={(s) => setActiveSubTab(s)} variant="sub">Pending Payments/Prices</TabButton>
+                                                </>
+                                            )}
+                                            {activeModule === 'FINANCE' && (
+                                                <>
+                                                    <TabButton tabId="paymentsAdvances" activeTab={activeSubTab} onClick={(s) => setActiveSubTab(s)} variant="sub">Payments & Advances</TabButton>
+                                                    <TabButton tabId="outsourcedCosts" activeTab={activeSubTab} onClick={(s) => setActiveSubTab(s)} variant="sub">Outsourced Costs</TabButton>
+                                                </>
+                                            )}
+                                            {activeModule === 'DASHBOARDS' && (
+                                                <>
+                                                    <TabButton tabId="opsDashboard" activeTab={activeSubTab} onClick={(s) => setActiveSubTab(s)} variant="sub">Operational Dashboard</TabButton>
+                                                    {canViewFinancials && <TabButton tabId="cashDashboard" activeTab={activeSubTab} onClick={(s) => setActiveSubTab(s)} variant="sub">Cash Dashboard</TabButton>}
+                                                </>
+                                            )}
+                                        </nav>
+                                    </div>
+                                )}
                                 
                                 {/* Content */}
-                                <div role="tabpanel" hidden={mainTab !== 'setup'}>
+                                <div role="tabpanel" hidden={activeModule !== 'OPERATIONS' || activeSubTab !== 'cherryDeliveries'}>
                                     {singleActiveProject ? (
-                                        <div className="bg-white dark:bg-brand-dark rounded-xl shadow-md p-6 border border-gray-200 dark:border-gray-700">
-                                            <div className="border-b border-gray-200 dark:border-gray-700 pb-6">
-                                                <PreProjectChecklist project={singleActiveProject} setActiveSetupTab={setActiveSetupTab} setMainTab={setMainTab} />
-                                            </div>
-                                            <div className="pt-6">
-                                                <div className="border-b border-gray-200 dark:border-gray-700 mb-6" role="tablist">
-                                                    <TabButton tabId="setup" activeTab={activeSetupTab} onClick={(tab) => setActiveSetupTab(tab)} variant="setup">Setup Details</TabButton>
-                                                    <TabButton tabId="client" activeTab={activeSetupTab} onClick={(tab) => setActiveSetupTab(tab)} variant="setup">Client Details</TabButton>
-                                                    <TabButton tabId="financing" activeTab={activeSetupTab} onClick={(tab) => setActiveSetupTab(tab)} variant="setup">Financing</TabButton>
-                                                </div>
-                                                
-                                                {!isChecklistComplete && <div className="mb-6 p-3 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200 rounded-lg text-sm text-center border border-amber-200 dark:border-amber-800/50">Complete all items in the Readiness Checklist to ensure the project is ready for operations.</div>}
-                                                
-                                                {activeSetupTab === 'setup' && <ProjectSetup project={singleActiveProject} />}
-                                                {activeSetupTab === 'client' && <ClientSelectionSetup project={singleActiveProject} clients={clients} onUpdateProject={(projectId, updates) => dispatch({ type: 'UPDATE_PROJECT', payload: { projectId, updates } })} />}
-                                                {activeSetupTab === 'financing' && (
-                                                    <FinancingSetup 
-                                                        project={singleActiveProject} 
-                                                        financiers={financiers} 
-                                                        onAddFinancing={(projectId, data) => dispatch({ type: 'ADD_FINANCING', payload: { projectId, data } })}
-                                                        onDeleteFinancing={(projectId, eventId) => dispatch({ type: 'DELETE_FINANCING', payload: { projectId, eventId } })}
-                                                    />
-                                                )}
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="flex flex-col items-center justify-center h-64 bg-white dark:bg-brand-dark rounded-xl p-8 text-center border border-gray-200 dark:border-gray-700 shadow-md">
-                                            <Icon name="switchHorizontal" className="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4" />
-                                            <h2 className="text-xl font-heading font-black text-brand-dark dark:text-white uppercase tracking-tight">Multiple Projects Selected</h2>
-                                            <p className="text-gray-500 dark:text-gray-400 mt-2">Please select a single project to view setup details.</p>
-                                        </div>
-                                    )}
-                                </div>
-                                
-                                <div role="tabpanel" hidden={mainTab !== 'dataEntry'}>
-                                    {singleActiveProject ? (
-                                        <DataEntry project={singleActiveProject} onNavigateToSettings={() => setActiveSetting('storageLocations')} readOnly={!canEdit} />
+                                        <DataEntry project={singleActiveProject} activeTab="deliveries" hideTabs={true} onNavigateToSettings={() => setActiveSetting('storageLocations')} readOnly={!canEdit} />
                                     ) : (
                                         <div className="bg-white dark:bg-brand-dark rounded-xl shadow-md p-8 text-center border border-gray-200 dark:border-gray-700 h-64 flex flex-col justify-center items-center">
                                             <Icon name="switchHorizontal" className="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4" />
@@ -287,29 +307,60 @@ const MainAppContent: React.FC = () => {
                                     )}
                                 </div>
 
-                                {canViewFinancials && (
-                                    <div role="tabpanel" hidden={mainTab !== 'cashDashboard'}>
-                                        <div className="bg-white dark:bg-brand-dark rounded-xl shadow-md p-6 border border-gray-200 dark:border-gray-700">
-                                            <Dashboard projects={activeProjects} />
+                                <div role="tabpanel" hidden={activeModule !== 'OPERATIONS' || activeSubTab !== 'processingWorkflow'}>
+                                    {singleActiveProject ? (
+                                        <DataEntry project={singleActiveProject} activeTab="processing" hideTabs={true} onNavigateToSettings={() => setActiveSetting('storageLocations')} readOnly={!canEdit} />
+                                    ) : (
+                                        <div className="bg-white dark:bg-brand-dark rounded-xl shadow-md p-8 text-center border border-gray-200 dark:border-gray-700 h-64 flex flex-col justify-center items-center">
+                                            <Icon name="switchHorizontal" className="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4" />
+                                            <h3 className="text-xl font-heading font-black text-brand-dark dark:text-white uppercase tracking-tight">Multiple Projects Selected</h3>
+                                            <p className="text-gray-500 dark:text-gray-400 mt-2">Please select a single project to perform data entry.</p>
                                         </div>
-                                    </div>
-                                )}
+                                    )}
+                                </div>
 
-                                <div role="tabpanel" hidden={mainTab !== 'opsDashboard'}>
+                                <div role="tabpanel" hidden={activeModule !== 'APPROVALS' || activeSubTab !== 'qualityApprovals'}>
+                                    <QualityApprovalDashboard />
+                                </div>
+
+                                <div role="tabpanel" hidden={activeModule !== 'APPROVALS' || activeSubTab !== 'pendingPayments'}>
+                                    {/* Placeholder for Pending Payments/Prices - using paymentPipeline for now */}
+                                    <div className="bg-white dark:bg-brand-dark rounded-xl shadow-md p-6 border border-gray-200 dark:border-gray-700">
+                                        <h2 className="text-xl font-heading font-black text-brand-dark dark:text-white uppercase tracking-tight mb-4">Pending Payments & Prices</h2>
+                                        <p className="text-gray-500 dark:text-gray-400">Payment pipeline and price approval view goes here.</p>
+                                    </div>
+                                </div>
+
+                                <div role="tabpanel" hidden={activeModule !== 'FINANCE' || activeSubTab !== 'paymentsAdvances'}>
+                                    {/* Merged view of Payments & Advances */}
+                                    {singleActiveProject ? (
+                                        <DataEntry project={singleActiveProject} activeTab="advances" hideTabs={true} onNavigateToSettings={() => setActiveSetting('storageLocations')} readOnly={!canEdit} />
+                                    ) : (
+                                        <div className="bg-white dark:bg-brand-dark rounded-xl shadow-md p-8 text-center border border-gray-200 dark:border-gray-700 h-64 flex flex-col justify-center items-center">
+                                            <Icon name="switchHorizontal" className="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4" />
+                                            <h3 className="text-xl font-heading font-black text-brand-dark dark:text-white uppercase tracking-tight">Multiple Projects Selected</h3>
+                                            <p className="text-gray-500 dark:text-gray-400 mt-2">Please select a single project to view payments and advances.</p>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div role="tabpanel" hidden={activeModule !== 'FINANCE' || activeSubTab !== 'outsourcedCosts'}>
+                                    <OutsourcedCostsDashboard />
+                                </div>
+
+                                <div role="tabpanel" hidden={activeModule !== 'DASHBOARDS' || activeSubTab !== 'opsDashboard'}>
                                     <div className="bg-white dark:bg-brand-dark rounded-xl shadow-md p-6 border border-gray-200 dark:border-gray-700">
                                         <OperationalDashboard projects={activeProjects} />
                                     </div>
                                 </div>
 
-                                <div role="tabpanel" hidden={mainTab !== 'qualityApprovals'}>
-                                    <QualityApprovalDashboard />
+                                <div role="tabpanel" hidden={activeModule !== 'DASHBOARDS' || activeSubTab !== 'cashDashboard'}>
+                                    <div className="bg-white dark:bg-brand-dark rounded-xl shadow-md p-6 border border-gray-200 dark:border-gray-700">
+                                        <Dashboard projects={activeProjects} />
+                                    </div>
                                 </div>
 
-                                <div role="tabpanel" hidden={mainTab !== 'outsourcedCosts'}>
-                                    <OutsourcedCostsDashboard />
-                                </div>
-
-                                <div role="tabpanel" hidden={mainTab !== 'activityLog'}>
+                                <div role="tabpanel" hidden={activeModule !== 'ACTIVITY_LOG'}>
                                     <div className="bg-white dark:bg-brand-dark rounded-xl shadow-md p-6 border border-gray-200 dark:border-gray-700">
                                         <div className="flex justify-between items-center mb-6">
                                             <h2 className="text-xl font-heading font-black text-brand-dark dark:text-white uppercase tracking-tight">Activity Log</h2>
@@ -318,11 +369,9 @@ const MainAppContent: React.FC = () => {
                                     </div>
                                 </div>
 
-                                {isMultiSelect && (
-                                    <div role="tabpanel" hidden={mainTab !== 'globalInventory'}>
-                                        <GlobalInventory projects={activeProjects} />
-                                    </div>
-                                )}
+                                <div role="tabpanel" hidden={activeModule !== 'GLOBAL_INVENTORY'}>
+                                    <GlobalInventory projects={activeProjects} />
+                                </div>
                              </div>
                          ) : (
                              <div className="flex flex-col items-center justify-center h-[70vh] bg-white dark:bg-brand-dark rounded-xl p-8 text-center border border-gray-200 dark:border-gray-700 shadow-md">

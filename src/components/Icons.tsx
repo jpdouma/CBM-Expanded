@@ -1,6 +1,6 @@
 import React from 'react';
 
-export type IconName = 'coffeeBean' | 'plus' | 'chevronDown' | 'upload' | 'download' | 'printer' | 'trash' | 'check' | 'money' | 'truck' | 'sun' | 'moon' | 'droplet' | 'archiveBox' | 'cog' | 'wrenchScrewdriver' | 'refresh' | 'pencil' | 'xMark' | 'arrowDown' | 'arrowUp' | 'chartBar' | 'switchHorizontal' | 'documentText' | 'arrowLeft' | 'informationCircle' | 'beaker' | 'user' | 'envelope' | 'shieldCheck';
+export type IconName = 'coffeeBean' | 'plus' | 'chevronDown' | 'upload' | 'download' | 'printer' | 'trash' | 'check' | 'money' | 'truck' | 'sun' | 'moon' | 'droplet' | 'archiveBox' | 'cog' | 'wrenchScrewdriver' | 'refresh' | 'pencil' | 'xMark' | 'arrowDown' | 'arrowUp' | 'chartBar' | 'switchHorizontal' | 'documentText' | 'arrowLeft' | 'informationCircle' | 'beaker' | 'user' | 'envelope' | 'shieldCheck' | 'clipboard';
 
 interface IconProps extends React.SVGProps<SVGSVGElement> {
   name: IconName;
@@ -53,7 +53,8 @@ const ICONS: Record<IconName, React.ReactNode> = {
   beaker: <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v1.244c0 .462.202.9.553 1.202l5.444 4.667c.351.301.553.74.553 1.202v1.244m-6.553-8.315a6.75 6.75 0 0 0-1.5 0V5.25m1.5-2.146c.147 0 .294.004.44.012a6.75 6.75 0 0 1 1.5 0V5.25m-4.5 0h4.5m-4.5 0v3.104c0 .462.202.9.553 1.202l5.444 4.667c.351.301.553.74.553 1.202v4.381c0 .63-.39 1.19-.986 1.414l-4.014 1.506c-.659.247-1.38-.099-1.636-.772a1.875 1.875 0 0 1 0-1.281l1.506-4.014a1.875 1.875 0 0 1 1.414-.986h4.381" />,
   user: <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />,
   envelope: <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" />,
-  shieldCheck: <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" />
+  shieldCheck: <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" />,
+  clipboard: <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.494 1.084 1.2 1.084 2.012V19.5a2.25 2.25 0 0 1-2.25 2.25h-9a2.25 2.25 0 0 1-2.25-2.25V5.888c0-.812.438-1.518 1.084-2.012m9.75 0a.75.75 0 0 1 .75.75v0c0 .212-.03.418-.084.612m-7.332 0a.75.75 0 0 0-.75-.75v0c0 .212.03.418.084.612" />
 };
 
 export const Icon: React.FC<IconProps> = ({ name, title, className = "w-6 h-6", ...props }) => {

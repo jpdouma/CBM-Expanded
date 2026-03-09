@@ -12,6 +12,9 @@ interface DataEntryProps {
     project: Project;
     onNavigateToSettings?: () => void;
     readOnly?: boolean;
+    activeTab?: DataEntryTab;
+    onTabChange?: (tab: DataEntryTab) => void;
+    hideTabs?: boolean;
 }
 
 type DataEntryTab = 'deliveries' | 'advances' | 'processing';
@@ -30,11 +33,14 @@ const TabButton: React.FC<{ tabId: DataEntryTab, activeTab: DataEntryTab, setAct
     </button>
 );
 
-export const DataEntry: React.FC<DataEntryProps> = ({ project, onNavigateToSettings, readOnly }) => {
+export const DataEntry: React.FC<DataEntryProps> = ({ project, onNavigateToSettings, readOnly, activeTab: externalActiveTab, onTabChange, hideTabs }) => {
     const { state, dispatch } = useProjects();
     const { farmers: allFarmers = [], buyingPrices = [], containers = [] } = state;
     
-    const [activeTab, setActiveTab] = useState<DataEntryTab>('deliveries');
+    const [internalActiveTab, setInternalActiveTab] = useState<DataEntryTab>('deliveries');
+    const activeTab = externalActiveTab || internalActiveTab;
+    const setActiveTab = onTabChange || setInternalActiveTab;
+
     const [showBulkDelivery, setShowBulkDelivery] = useState(false);
     const [showBulkAdvance, setShowBulkAdvance] = useState(false);
 
@@ -90,13 +96,15 @@ export const DataEntry: React.FC<DataEntryProps> = ({ project, onNavigateToSetti
                 </div>
             </div>
 
-            <div className="border-b border-gray-200 dark:border-gray-700">
-                <div className="flex space-x-2">
-                    <TabButton tabId="deliveries" activeTab={activeTab} setActiveTab={setActiveTab}>Cherry Deliveries</TabButton>
-                    <TabButton tabId="advances" activeTab={activeTab} setActiveTab={setActiveTab}>Farmer Advances</TabButton>
-                    <TabButton tabId="processing" activeTab={activeTab} setActiveTab={setActiveTab}>Processing Workflow</TabButton>
+            {!hideTabs && (
+                <div className="border-b border-gray-200 dark:border-gray-700">
+                    <div className="flex space-x-2">
+                        <TabButton tabId="deliveries" activeTab={activeTab} setActiveTab={setActiveTab}>Cherry Deliveries</TabButton>
+                        <TabButton tabId="advances" activeTab={activeTab} setActiveTab={setActiveTab}>Farmer Advances</TabButton>
+                        <TabButton tabId="processing" activeTab={activeTab} setActiveTab={setActiveTab}>Processing Workflow</TabButton>
+                    </div>
                 </div>
-            </div>
+            )}
 
             <div className="mt-6">
                 {activeTab === 'deliveries' && (
