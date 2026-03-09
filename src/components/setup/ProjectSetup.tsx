@@ -8,6 +8,8 @@ import { FinancialProjection } from '../dashboard/FinancialProjection';
 
 interface ProjectSetupProps {
     project: Project;
+    // Added this optional prop so we can check if they are an Admin
+    currentUser?: { role: string }; 
 }
 
 type SetupTab = 'details' | 'client' | 'financing' | 'projection';
@@ -22,7 +24,7 @@ const TabButton: React.FC<{ tabId: SetupTab, activeTab: SetupTab, setActiveTab: 
     </button>
 );
 
-export const ProjectSetup: React.FC<ProjectSetupProps> = ({ project }) => {
+export const ProjectSetup: React.FC<ProjectSetupProps> = ({ project, currentUser }) => {
     const { state, dispatch } = useProjects();
     const { clients = [], financiers = [] } = state;
     const [activeTab, setActiveTab] = useState<SetupTab>('details');
@@ -39,10 +41,36 @@ export const ProjectSetup: React.FC<ProjectSetupProps> = ({ project }) => {
         dispatch({ type: 'DELETE_FINANCING', payload: { projectId, eventId } });
     };
 
+    // 👇 NEW LOGIC: The Warning Intercept
+    const handleFinalizeSetup = () => {
+        const isAdmin = currentUser?.role === 'Administrator';
+
+        if (!isAdmin) {
+            const isConfirmed = window.confirm(
+                "⚠️ WARNING: Marking this project as 100% complete will hide the Project Setup tab from your daily view. Are you sure you are ready to begin operations?"
+            );
+            
+            if (!isConfirmed) {
+                return; // Stop the function if they click Cancel
+            }
+        }
+
+        // Proceed to update the project progress
+        handleUpdateProject(project.id, { setupProgress: 100 }); 
+    };
+
     return (
         <div className="space-y-6">
             <div className="flex justify-between items-center">
                 <h2 className="text-2xl font-bold text-white">Project Setup: {project.name}</h2>
+                
+                {/* 👇 NEW LOGIC: The Finalize Button */}
+                <button 
+                    onClick={handleFinalizeSetup}
+                    className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-semibold transition-colors"
+                >
+                    Finalize Project Setup
+                </button>
             </div>
 
             <div className="border-b border-gray-700">

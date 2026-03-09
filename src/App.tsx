@@ -32,8 +32,9 @@ import type { ProcessingTier } from './types';
 
 type ActiveSetting = 'hub' | 'dryingBeds' | 'clients' | 'financiers' | 'storageLocations' | 'farmers' | 'users' | 'roles' | 'costing' | 'pricing' | null;
 type ActiveSetupTab = 'setup' | 'client' | 'financing';
-type Module = 'OPERATIONS' | 'APPROVALS' | 'FINANCE' | 'DASHBOARDS' | 'ACTIVITY_LOG' | 'GLOBAL_INVENTORY';
+type Module = 'PROJECT_SETUP' | 'OPERATIONS' | 'APPROVALS' | 'FINANCE' | 'DASHBOARDS' | 'ACTIVITY_LOG' | 'GLOBAL_INVENTORY';
 type SubTab = 
+    | 'setup'                                   // PROJECT_SETUP
     | 'cherryDeliveries' | 'processingWorkflow' // OPERATIONS
     | 'qualityApprovals' | 'pendingPayments'    // APPROVALS
     | 'paymentsAdvances' | 'outsourcedCosts'    // FINANCE
@@ -57,7 +58,7 @@ const SettingsView: React.FC<{ activeSetting: ActiveSetting, setActiveSetting: (
 const MainAppContent: React.FC = () => {
     const { state, dispatch } = useProjects();
     const { projects, selectedProjectIds, clients = [], financiers = [] } = state;
-    const { isAuthenticated } = useAuth();
+    const { isAuthenticated, currentUser } = useAuth();
     const { canEdit, canViewFinancials, isClientViewer, assignedClientId, canManageSettings, canApproveSteps, canManageFinances } = usePermissions();
 
     const [activeSetupTab, setActiveSetupTab] = useState<ActiveSetupTab>('setup');
@@ -134,6 +135,9 @@ const MainAppContent: React.FC = () => {
         setActiveModule(module);
         // Set default sub-tab for the module
         switch (module) {
+            case 'PROJECT_SETUP':
+                setActiveSubTab('setup');
+                break;
             case 'OPERATIONS':
                 setActiveSubTab('cherryDeliveries');
                 break;
@@ -151,6 +155,7 @@ const MainAppContent: React.FC = () => {
     
     const singleActiveProject = activeProjects.length === 1 ? activeProjects[0] : null;
     const isChecklistComplete = singleActiveProject ? Object.values(singleActiveProject.preProjectChecklist).every(Boolean) : false;
+    const isSetupVisible = currentUser?.role === 'Administrator' || !isChecklistComplete;
     const isMultiSelect = activeProjects.length > 1;
 
     const handleExportBackup = () => {
@@ -251,6 +256,9 @@ const MainAppContent: React.FC = () => {
                                 {/* Module Navigation */}
                                 <div className="bg-white dark:bg-brand-dark rounded-xl shadow-md sticky top-[72px] z-10 overflow-x-auto border border-gray-200 dark:border-gray-700">
                                     <nav className="flex min-w-max px-2" role="tablist" aria-label="Main navigation">
+                                        {isSetupVisible && (
+                                            <TabButton tabId="PROJECT_SETUP" activeTab={activeModule} onClick={(m) => handleModuleSwitch(m as Module)} variant="main" disabled={isMultiSelect}>Project Setup</TabButton>
+                                        )}
                                         <TabButton tabId="OPERATIONS" activeTab={activeModule} onClick={(m) => handleModuleSwitch(m as Module)} variant="main">Operations</TabButton>
                                         <TabButton tabId="APPROVALS" activeTab={activeModule} onClick={(m) => handleModuleSwitch(m as Module)} variant="main">Approvals</TabButton>
                                         <TabButton tabId="FINANCE" activeTab={activeModule} onClick={(m) => handleModuleSwitch(m as Module)} variant="main">Finance</TabButton>
@@ -295,6 +303,18 @@ const MainAppContent: React.FC = () => {
                                 )}
                                 
                                 {/* Content */}
+                                <div role="tabpanel" hidden={activeModule !== 'PROJECT_SETUP'}>
+                                    {singleActiveProject ? (
+                                        <ProjectSetup project={singleActiveProject} />
+                                    ) : (
+                                        <div className="bg-white dark:bg-brand-dark rounded-xl shadow-md p-8 text-center border border-gray-200 dark:border-gray-700 h-64 flex flex-col justify-center items-center">
+                                            <Icon name="switchHorizontal" className="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4" />
+                                            <h3 className="text-xl font-heading font-black text-brand-dark dark:text-white uppercase tracking-tight">Multiple Projects Selected</h3>
+                                            <p className="text-gray-500 dark:text-gray-400 mt-2">Please select a single project to view setup details.</p>
+                                        </div>
+                                    )}
+                                </div>
+
                                 <div role="tabpanel" hidden={activeModule !== 'OPERATIONS' || activeSubTab !== 'cherryDeliveries'}>
                                     {singleActiveProject ? (
                                         <DataEntry project={singleActiveProject} activeTab="deliveries" hideTabs={true} onNavigateToSettings={() => setActiveSetting('storageLocations')} readOnly={!canEdit} />

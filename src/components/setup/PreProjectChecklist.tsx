@@ -2,6 +2,7 @@ import React from 'react';
 import type { Project, PreProjectChecklist as ChecklistType } from '../../types';
 import { Icon } from '../Icons';
 import { useProjects } from '../../context/ProjectProvider';
+import { useAuth } from '../../context/AuthProvider';
 
 interface PreProjectChecklistProps {
     project: Project;
@@ -11,16 +12,33 @@ interface PreProjectChecklistProps {
 
 export const PreProjectChecklist: React.FC<PreProjectChecklistProps> = ({ project, setActiveSetupTab, setMainTab }) => {
     const { dispatch } = useProjects();
+    const { currentUser } = useAuth();
     
     const checklist = project.preProjectChecklist;
 
     const toggleItem = (key: keyof ChecklistType) => {
+        const isChecking = !checklist[key];
+        
+        // Check if this action will lead to 100% completion
+        if (isChecking) {
+            const currentCheckedCount = Object.values(checklist).filter(Boolean).length;
+            const totalItems = Object.keys(checklist).length;
+            
+            if (currentCheckedCount === totalItems - 1) {
+                // This is the final item
+                if (currentUser?.role !== 'Administrator') {
+                    const confirmed = window.confirm("⚠️ WARNING: Marking this project as 100% complete will hide the Project Setup tab from your daily view. Are you sure you are ready to begin operations?");
+                    if (!confirmed) return;
+                }
+            }
+        }
+
         dispatch({
             type: 'UPDATE_CHECKLIST_ITEM',
             payload: {
                 projectId: project.id,
                 key,
-                value: !checklist[key]
+                value: isChecking
             }
         });
     };
