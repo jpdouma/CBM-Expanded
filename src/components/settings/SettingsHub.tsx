@@ -6,8 +6,8 @@ import { useProjects } from '../../context/ProjectProvider';
 import { seedDummyData } from '../../utils/seedData';
 
 interface SettingsHubProps {
-    activeSetting: 'hub' | 'dryingBeds' | 'clients' | 'financiers' | 'storageLocations' | 'farmers' | 'users' | 'roles' | 'costing' | 'pricing' | null;
-    onNavigate: (setting: 'hub' | 'dryingBeds' | 'clients' | 'financiers' | 'storageLocations' | 'farmers' | 'users' | 'roles' | 'costing' | 'pricing' | null) => void;
+    activeSetting: 'hub' | 'dryingBeds' | 'clients' | 'financiers' | 'storageLocations' | 'farmers' | 'users' | 'roles' | 'costing' | 'pricing' | 'containers' | null;
+    onNavigate: (setting: 'hub' | 'dryingBeds' | 'clients' | 'financiers' | 'storageLocations' | 'farmers' | 'users' | 'roles' | 'costing' | 'pricing' | 'containers' | null) => void;
     children: React.ReactNode;
 }
 
@@ -64,6 +64,12 @@ export const SettingsHub: React.FC<SettingsHubProps> = ({ activeSetting, onNavig
                         onClick={() => onNavigate('farmers')}
                     />
                     <SettingCard 
+                        title="Drying Beds" 
+                        description="Configure and manage drying beds, their capacities, and lifecycle costs."
+                        icon="sun"
+                        onClick={() => onNavigate('dryingBeds')}
+                    />
+                    <SettingCard 
                         title="Storage Locations" 
                         description="Configure warehouses and storage areas for green beans."
                         icon="archiveBox"
@@ -95,17 +101,12 @@ export const SettingsHub: React.FC<SettingsHubProps> = ({ activeSetting, onNavig
                         icon="money"
                         onClick={() => onNavigate('pricing')}
                     />
-                    {canManageRoles && (
-                        <SettingCard 
-                            title="Seed Dummy Data" 
-                            description="DEVELOPER ONLY: Populate the app with realistic test data across all stages."
-                            icon="beaker"
-                            variant="success"
-                            onClick={() => {
-                                seedDummyData(dispatch);
-                            }}
-                        />
-                    )}
+                    <SettingCard 
+                        title="Container Management" 
+                        description="Generate and manage 60L containers for cherry reception."
+                        icon="archiveBox"
+                        onClick={() => onNavigate('containers')}
+                    />
                 </div>
             </div>
         );
@@ -125,11 +126,13 @@ export const SettingsHub: React.FC<SettingsHubProps> = ({ activeSetting, onNavig
                     {activeSetting === 'clients' && 'Client Directory'}
                     {activeSetting === 'financiers' && 'Financier Directory'}
                     {activeSetting === 'farmers' && 'Farmer Directory'}
+                    {activeSetting === 'dryingBeds' && 'Drying Bed Management'}
                     {activeSetting === 'storageLocations' && 'Storage Locations'}
                     {activeSetting === 'users' && 'User Management'}
                     {activeSetting === 'roles' && 'Role Management'}
                     {activeSetting === 'costing' && 'Standard Costing'}
                     {activeSetting === 'pricing' && 'Buying Prices'}
+                    {activeSetting === 'containers' && 'Container Management'}
                 </h2>
                 <button onClick={() => onNavigate(null)} className="ml-auto text-gray-400 hover:text-white">
                     <Icon name="xMark" className="w-6 h-6" />

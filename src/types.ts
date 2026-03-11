@@ -7,6 +7,10 @@ export type Permission =
     | 'MANAGE_USERS'
     | 'MANAGE_ROLES'
     | 'MANAGE_FARMERS'
+    | 'MANAGE_CLIENTS'
+    | 'MANAGE_FINANCIERS'
+    | 'MANAGE_STORAGE_LOCATIONS'
+    | 'MANAGE_CONTAINERS'
     | 'LOG_RECEPTION'
     | 'MANAGE_PRIMARY_PROCESSING'
     | 'MANAGE_SECONDARY_PROCESSING'
@@ -15,7 +19,12 @@ export type Permission =
     | 'APPROVE_PAYMENTS_DIRECTOR'
     | 'EXECUTE_PAYMENTS'
     | 'SET_PRICING'
-    | 'VIEW_CLIENT_PORTAL';
+    | 'VIEW_CLIENT_PORTAL'
+    | 'VIEW_ACTIVITY_LOG'
+    | 'EXPORT_DATA'
+    | 'IMPORT_DATA'
+    | 'MANAGE_PROJECTS'
+    | 'VIEW_INVENTORY';
 
 export interface Role {
     id: string;
@@ -521,6 +530,8 @@ type DeleteClientAction = { type: 'DELETE_CLIENT', payload: { clientId: string }
 type AddStorageLocationAction = { type: 'ADD_STORAGE_LOCATION', payload: { locationData: Omit<StorageLocation, 'id'> } };
 type UpdateStorageLocationAction = { type: 'UPDATE_STORAGE_LOCATION', payload: { locationId: string, updates: Partial<Omit<StorageLocation, 'id'>> } };
 type DeleteStorageLocationAction = { type: 'DELETE_STORAGE_LOCATION', payload: { locationId: string } };
+type GenerateContainersAction = { type: 'GENERATE_CONTAINERS'; payload: { count: number; date: string } };
+type DeleteContainerAction = { type: 'DELETE_CONTAINER'; payload: { containerId: string } };
 
 // Farmer Management Actions
 type AddFarmerAction = { type: 'ADD_FARMER'; payload: { farmerData: Omit<Farmer, 'id'>; id?: string } };
@@ -538,6 +549,7 @@ type DeleteUserAction = { type: 'DELETE_USER'; payload: { userId: string } };
 type AddRoleAction = { type: 'ADD_ROLE'; payload: { roleData: Omit<Role, 'id'> } };
 type UpdateRoleAction = { type: 'UPDATE_ROLE'; payload: { roleId: string; updates: Partial<Role> } };
 type DeleteRoleAction = { type: 'DELETE_ROLE'; payload: { roleId: string } };
+type CloneRoleAction = { type: 'CLONE_ROLE'; payload: { roleId: string; newName: string } };
 
 type AddAdvanceAction = { type: 'ADD_ADVANCE'; payload: { projectId: string; data: Omit<Advance, 'id' | 'amountUSD'> } };
 type AddBulkAdvancesAction = { type: 'ADD_BULK_ADVANCES'; payload: { projectId: string; advancesData: any[] } };
@@ -566,6 +578,7 @@ type ApprovePaymentDirectorAction = { type: 'APPROVE_PAYMENT_DIRECTOR'; payload:
 type ExecutePaymentAction = { type: 'EXECUTE_PAYMENT'; payload: { paymentLineId: string; paymentMethod: string } };
 type ReceptionDeliveryAction = { type: 'RECEPTION_DELIVERY'; payload: { projectId: string; farmerId: string; date: string; weight: number; unripe: number; earlyRipe: number; optimal: number; overRipe: number; containerId?: string; deliveryId?: string; paymentLineId?: string; newContainerId?: string } };
 type DeleteFinancingAction = { type: 'DELETE_FINANCING'; payload: { projectId: string; eventId: string } };
+type CloseContainerAction = { type: 'CLOSE_CONTAINER'; payload: { containerId: string } };
 
 // LEGACY PROCESSING ACTIONS (Keep for now, but we will migrate away)
 type StartDryingAction = { type: 'START_DRYING'; payload: { projectId: string; deliveryId: string; startDate: string } };
@@ -655,6 +668,9 @@ export type ProjectAction =
     | AddRoleAction
     | UpdateRoleAction
     | DeleteRoleAction
+    | CloneRoleAction
+    | GenerateContainersAction
+    | DeleteContainerAction
     | AddAdvanceAction
     | AddBulkAdvancesAction
     | AddDeliveryAction
@@ -677,6 +693,7 @@ export type ProjectAction =
     | ExecutePaymentAction
     | ReceptionDeliveryAction
     | DeleteFinancingAction
+    | CloseContainerAction
     | StartDryingAction
     | AddMoistureMeasurementAction
     | MoveToStorageAction

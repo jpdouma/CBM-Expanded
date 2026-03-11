@@ -1,4 +1,4 @@
-import type { ProjectState, ProjectAction, Project, Delivery, DryingBed, ClientDetails, Financier, Sale, ActivityLogEntryType, StorageLocation, Farmer, User, ProcessingBatch, ProcessingStage, PaymentLine, StoredBatch, HulledBatch } from '../types';
+import type { ProjectState, ProjectAction, Project, Delivery, DryingBed, ClientDetails, Financier, Sale, ActivityLogEntryType, StorageLocation, Farmer, User, ProcessingBatch, ProcessingStage, PaymentLine, StoredBatch, HulledBatch, Container } from '../types';
 import { dayDiff } from '../utils/formatters';
 import { defaultClientDetails, createNewProject, getRecalculatedDryingBeds } from '../utils/projectHelpers';
 import { processImportedData } from '../utils/migrations';
@@ -6,11 +6,7 @@ import { getBatchProvenance } from '../utils/traceability';
 
 export { defaultClientDetails };
 
-export type AppProjectAction = ProjectAction 
-    | { type: 'RECEPTION_DELIVERY'; payload: { projectId: string; farmerId: string; date: string; weight: number; unripe: number; earlyRipe: number; optimal: number; overRipe: number; containerId?: string } }
-    | { type: 'APPROVE_PAYMENT_ACCOUNTANT'; payload: { paymentLineId: string } }
-    | { type: 'APPROVE_PAYMENT_DIRECTOR'; payload: { paymentLineId: string; authCode: string } }
-    | { type: 'EXECUTE_PAYMENT'; payload: { paymentLineId: string; paymentMethod: string } };
+export type AppProjectAction = ProjectAction;
 
 const updateProjectInState = (state: ProjectState, projectId: string, updateFn: (project: Project) => Project): ProjectState => {
     return {
@@ -211,6 +207,48 @@ const handleSettings = (state: ProjectState, action: ProjectAction): ProjectStat
             return { ...state, storageLocations: state.storageLocations.map(l => l.id === action.payload.locationId ? { ...l, ...action.payload.updates } : l) };
         case 'DELETE_STORAGE_LOCATION':
             return { ...state, storageLocations: state.storageLocations.filter(l => l.id !== action.payload.locationId) };
+        case 'GENERATE_CONTAINERS': {
+            const { count, date } = action.payload;
+            const d = new Date(date);
+            const month = (d.getMonth() + 1).toString().padStart(2, '0');
+            const year = d.getFullYear().toString();
+            const prefix = `${month}${year}`;
+            
+            // Find existing containers for this month to get starting counter
+            const existingForMonth = state.containers.filter(c => c.label.startsWith(prefix));
+            let counter = 0;
+            if (existingForMonth.length > 0) {
+                const counters = existingForMonth.map(c => {
+                    const parts = c.label.split('-');
+                    return parts.length > 1 ? parseInt(parts[1]) : 0;
+                });
+                counter = Math.max(...counters);
+            }
+
+            const newContainers = [];
+            for (let i = 1; i <= count; i++) {
+                counter++;
+                newContainers.push({
+                    id: crypto.randomUUID(),
+                    label: `${prefix}-${counter.toString().padStart(3, '0')}`,
+                    weight: 0,
+                    contributions: [],
+                    date: date,
+                    status: 'OPEN' as const
+                });
+            }
+            return { ...state, containers: [...state.containers, ...newContainers] };
+        }
+        case 'DELETE_CONTAINER': {
+            const { containerId } = action.payload;
+            // Check if container is in use in any processing batch
+            const isInUse = state.projects.some(p => p.processingBatches.some(b => b.containerIds.includes(containerId)));
+            if (isInUse) {
+                alert("Cannot delete: Container is currently assigned to a processing batch.");
+                return state;
+            }
+            return { ...state, containers: state.containers.filter(c => c.id !== containerId) };
+        }
         case 'ADD_FARMER': {
             const newFarmer = { ...action.payload.farmerData, id: action.payload.id || crypto.randomUUID() };
             if (state.farmers.some(f => f.name.toLowerCase() === newFarmer.name.toLowerCase())) {
@@ -271,6 +309,19 @@ const handleSettings = (state: ProjectState, action: ProjectAction): ProjectStat
             return { ...state, roles: [...state.roles, { ...action.payload.roleData, id: crypto.randomUUID() }] };
         case 'UPDATE_ROLE':
             return { ...state, roles: state.roles.map(r => r.id === action.payload.roleId ? { ...r, ...action.payload.updates } : r) };
+        case 'CLONE_ROLE': {
+            const { roleId, newName } = action.payload;
+            const roleToClone = state.roles.find(r => r.id === roleId);
+            if (!roleToClone) return state;
+            
+            const clonedRole = {
+                ...roleToClone,
+                id: crypto.randomUUID(),
+                name: newName,
+                isSystem: false
+            };
+            return { ...state, roles: [...state.roles, clonedRole] };
+        }
         case 'DELETE_ROLE':
             // Check if role is assigned to any user
             if (state.users.some(u => u.roleId === action.payload.roleId)) {
@@ -315,30 +366,85 @@ const handleFinance = (state: ProjectState, action: any): ProjectState => {
                 }
                 return { ...p, financing: [...p.financing, { ...data, id: crypto.randomUUID(), interestRateAnnual: financier.interestRateAnnual }] };
             });
-        case 'ADD_ADVANCE':
-            return updateProjectInState(state, action.payload.projectId, p => {
-                const { data } = action.payload;
-                const amountUSD = data.currency === 'USD' ? data.amount : data.amount / p.exchangeRateUGXtoUSD;
-                return { ...p, advances: [...p.advances, { ...data, id: crypto.randomUUID(), amountUSD }] };
-            });
-        case 'ADD_BULK_ADVANCES':
-            return updateProjectInState(state, action.payload.projectId, p => {
-                const existingKeys = new Set(p.advances.map(a => `${a.farmerId}-${a.date}-${a.amount}`));
-                const newAdvances = [];
-                for (const d of action.payload.advancesData) {
-                    const farmer = state.farmers.find(f => f.name.toLowerCase() === d.farmer_name?.trim().toLowerCase());
-                    if (!farmer) continue;
-                    const amt = parseFloat(d.amount);
-                    if (amt <= 0) continue;
-                    const key = `${farmer.id}-${d.date}-${amt}`;
-                    if (!existingKeys.has(key)) {
-                        const cur = d.currency?.toUpperCase() === 'USD' ? 'USD' : 'UGX';
-                        newAdvances.push({ id: crypto.randomUUID(), farmerId: farmer.id, date: d.date, amount: amt, currency: cur, amountUSD: cur === 'USD' ? amt : amt / p.exchangeRateUGXtoUSD });
-                        existingKeys.add(key);
-                    }
+        case 'ADD_ADVANCE': {
+            const { projectId, data } = action.payload;
+            const project = state.projects.find(p => p.id === projectId);
+            if (!project) return state;
+
+            const amountUSD = data.currency === 'USD' ? data.amount : data.amount / project.exchangeRateUGXtoUSD;
+            const advanceId = crypto.randomUUID();
+            
+            const newPaymentLine: PaymentLine = {
+                id: crypto.randomUUID(),
+                deliveryId: advanceId,
+                farmerId: data.farmerId,
+                amount: data.amount,
+                currency: data.currency,
+                status: 'PENDING_ACCOUNTANT',
+                date: data.date
+            };
+
+            const updatedProject = {
+                ...project,
+                advances: [...project.advances, { ...data, id: advanceId, amountUSD }]
+            };
+
+            return {
+                ...state,
+                paymentLines: [...(state.paymentLines || []), newPaymentLine],
+                projects: state.projects.map(p => p.id === projectId ? updatedProject : p)
+            };
+        }
+        case 'ADD_BULK_ADVANCES': {
+            const { projectId, advancesData } = action.payload;
+            const project = state.projects.find(p => p.id === projectId);
+            if (!project) return state;
+
+            const newAdvances = [...project.advances];
+            const newPaymentLines = [...(state.paymentLines || [])];
+            const existingKeys = new Set(newAdvances.map(a => `${a.farmerId}-${a.date}-${a.amount}`));
+
+            for (const d of advancesData) {
+                const farmer = state.farmers.find(f => f.name.toLowerCase() === d.farmer_name?.trim().toLowerCase());
+                if (!farmer) continue;
+                const amt = parseFloat(d.amount);
+                if (amt <= 0) continue;
+                const key = `${farmer.id}-${d.date}-${amt}`;
+                
+                if (!existingKeys.has(key)) {
+                    const cur = d.currency?.toUpperCase() === 'USD' ? 'USD' : 'UGX';
+                    const advanceId = crypto.randomUUID();
+                    const amountUSD = cur === 'USD' ? amt : amt / project.exchangeRateUGXtoUSD;
+                    
+                    newAdvances.push({ 
+                        id: advanceId, 
+                        farmerId: farmer.id, 
+                        date: d.date, 
+                        amount: amt, 
+                        currency: cur, 
+                        amountUSD 
+                    });
+
+                    newPaymentLines.push({
+                        id: crypto.randomUUID(),
+                        deliveryId: advanceId,
+                        farmerId: farmer.id,
+                        amount: amt,
+                        currency: cur,
+                        status: 'PENDING_ACCOUNTANT',
+                        date: d.date
+                    });
+
+                    existingKeys.add(key);
                 }
-                return { ...p, advances: [...p.advances, ...newAdvances] };
-            });
+            }
+
+            return {
+                ...state,
+                paymentLines: newPaymentLines,
+                projects: state.projects.map(p => p.id === projectId ? { ...project, advances: newAdvances } : p)
+            };
+        }
         case 'PUBLISH_BUYING_PRICES':
             return {
                 ...state,
@@ -409,27 +515,61 @@ const handleFinance = (state: ProjectState, action: any): ProjectState => {
                 amountPaidUSD
             };
 
+            // Handle Container Logic
             let updatedContainers = [...(state.containers || [])];
+            let remainingWeight = w;
+            const MAX_CAPACITY = 48;
+
+            // 1. If a specific container was selected, try to fill it first
             if (containerId && containerId !== 'new') {
-                updatedContainers = updatedContainers.map(c => {
-                    if (c.id === containerId) {
-                        return {
-                            ...c,
-                            weight: c.weight + w,
-                            contributions: [...c.contributions, { farmerId, deliveryId, weight: w }]
+                const cIdx = updatedContainers.findIndex(c => c.id === containerId);
+                if (cIdx !== -1 && updatedContainers[cIdx].status === 'OPEN') {
+                    const currentWeight = updatedContainers[cIdx].weight || 0;
+                    const availableSpace = Math.max(0, MAX_CAPACITY - currentWeight);
+                    const weightToAdd = Math.min(remainingWeight, availableSpace);
+                    
+                    if (weightToAdd > 0) {
+                        updatedContainers[cIdx] = {
+                            ...updatedContainers[cIdx],
+                            weight: currentWeight + weightToAdd,
+                            contributions: [...(updatedContainers[cIdx].contributions || []), { farmerId, deliveryId, weight: weightToAdd }],
+                            status: (currentWeight + weightToAdd) >= MAX_CAPACITY ? 'CLOSED' : 'OPEN'
                         };
+                        remainingWeight -= weightToAdd;
                     }
-                    return c;
-                });
-            } else {
-                updatedContainers.push({
-                    id: action.payload.newContainerId || crypto.randomUUID(),
-                    label: `Container ${updatedContainers.length + 1}`,
-                    weight: w,
-                    contributions: [{ farmerId, deliveryId, weight: w }],
-                    date,
-                    status: 'OPEN'
-                });
+                }
+            }
+
+            // 2. Fill other open containers if weight remains
+            while (remainingWeight > 0) {
+                const openContainerIdx = updatedContainers.findIndex(c => c.status === 'OPEN' && (c.weight || 0) < MAX_CAPACITY);
+                
+                if (openContainerIdx !== -1) {
+                    const c = updatedContainers[openContainerIdx];
+                    const availableSpace = MAX_CAPACITY - (c.weight || 0);
+                    const weightToAdd = Math.min(remainingWeight, availableSpace);
+                    
+                    updatedContainers[openContainerIdx] = {
+                        ...c,
+                        weight: (c.weight || 0) + weightToAdd,
+                        contributions: [...(c.contributions || []), { farmerId, deliveryId, weight: weightToAdd }],
+                        status: ((c.weight || 0) + weightToAdd) >= MAX_CAPACITY ? 'CLOSED' : 'OPEN'
+                    };
+                    remainingWeight -= weightToAdd;
+                } else {
+                    // 3. Create new container if no open ones left
+                    const weightToAdd = Math.min(remainingWeight, MAX_CAPACITY);
+                    const newC: Container = {
+                        id: crypto.randomUUID(),
+                        label: `CONT-${new Date().getTime()}-${Math.floor(Math.random() * 1000)}`,
+                        status: weightToAdd >= MAX_CAPACITY ? 'CLOSED' : 'OPEN',
+                        weight: weightToAdd,
+                        contributions: [{ farmerId, deliveryId, weight: weightToAdd }],
+                        date: date
+                    };
+                    updatedContainers.push(newC);
+                    remainingWeight -= weightToAdd;
+                }
             }
 
             const paymentLine: PaymentLine = {
@@ -485,6 +625,13 @@ const handleFinance = (state: ProjectState, action: any): ProjectState => {
                 ...state,
                 globalSettings: { ...(state.globalSettings || { processingCosts: [] }), ...action.payload.updates }
             };
+        case 'DELETE_FINANCING': {
+            const { projectId, eventId } = action.payload;
+            return updateProjectInState(state, projectId, p => ({
+                ...p,
+                financing: p.financing.filter(f => f.id !== eventId)
+            }));
+        }
         default: return state;
     }
 };
@@ -718,46 +865,109 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
                         : b
                 )
             }));
-        case 'ADD_DELIVERY':
-            return updateProjectInState(state, action.payload.projectId, p => {
-                const { data } = action.payload;
-                const costUSD = data.currency === 'USD' ? data.cost : data.cost / p.exchangeRateUGXtoUSD;
-                const farmerAdvances = p.advances.filter(a => a.farmerId === data.farmerId).reduce((s, a) => s + a.amountUSD, 0);
-                const priorOffsets = p.deliveries.filter(d => d.farmerId === data.farmerId).reduce((s, d) => s + d.advanceOffsetUSD, 0);
+        case 'ADD_DELIVERY': {
+            const { projectId, data } = action.payload;
+            const project = state.projects.find(p => p.id === projectId);
+            if (!project) return state;
+
+            const costUSD = data.currency === 'USD' ? data.cost : data.cost / project.exchangeRateUGXtoUSD;
+            const farmerAdvances = project.advances.filter(a => a.farmerId === data.farmerId).reduce((s, a) => s + a.amountUSD, 0);
+            const priorOffsets = project.deliveries.filter(d => d.farmerId === data.farmerId).reduce((s, d) => s + d.advanceOffsetUSD, 0);
+            const advanceOffsetUSD = Math.min(farmerAdvances - priorOffsets, costUSD);
+            const amountPaidUSD = costUSD - advanceOffsetUSD;
+
+            const deliveryId = data.id || crypto.randomUUID();
+            const newDelivery = { ...data, id: deliveryId, costUSD, advanceOffsetUSD, amountPaidUSD };
+
+            const newPaymentLine: PaymentLine = {
+                id: crypto.randomUUID(),
+                deliveryId: deliveryId,
+                farmerId: data.farmerId,
+                amount: data.cost,
+                currency: data.currency,
+                status: 'PENDING_ACCOUNTANT',
+                date: data.date
+            };
+
+            const updatedProject = { 
+                ...project, 
+                deliveries: [...project.deliveries, newDelivery] 
+            };
+
+            const { updatedBedIds } = getRecalculatedDryingBeds(updatedProject, state.dryingBeds);
+            updatedProject.dryingBedIds = updatedBedIds;
+
+            return {
+                ...state,
+                paymentLines: [...(state.paymentLines || []), newPaymentLine],
+                projects: state.projects.map(p => p.id === projectId ? updatedProject : p)
+            };
+        }
+        case 'ADD_BULK_DELIVERIES': {
+            const { projectId, deliveriesData } = action.payload;
+            const project = state.projects.find(p => p.id === projectId);
+            if (!project) return state;
+
+            const newDeliveries = [...project.deliveries];
+            const newPaymentLines = [...(state.paymentLines || [])];
+            const existingKeys = new Set(newDeliveries.map(d => `${d.farmerId}-${d.date}-${d.weight}`));
+
+            for (const d of deliveriesData) {
+                const farmer = state.farmers.find(f => f.name.toLowerCase() === d.farmer_name?.trim().toLowerCase());
+                if (!farmer) continue;
+                const weight = parseFloat(d.weight_kg);
+                if (weight <= 0) continue;
+                const key = `${farmer.id}-${d.date}-${weight}`;
+                if (existingKeys.has(key)) continue;
+
+                const cost = parseFloat(d.cost);
+                const cur = d.currency?.toUpperCase() === 'USD' ? 'USD' : 'UGX';
+                const costUSD = cur === 'USD' ? cost : cost / project.exchangeRateUGXtoUSD;
+                
+                const farmerAdvances = project.advances.filter(a => a.farmerId === farmer.id).reduce((s, a) => s + a.amountUSD, 0);
+                const priorOffsets = newDeliveries.filter(del => del.farmerId === farmer.id).reduce((s, del) => s + del.advanceOffsetUSD, 0);
                 const advanceOffsetUSD = Math.min(farmerAdvances - priorOffsets, costUSD);
-                const updatedP = { ...p, deliveries: [...p.deliveries, { ...data, costUSD, advanceOffsetUSD, amountPaidUSD: costUSD - advanceOffsetUSD }] };
-                const { updatedBedIds, releasedBeds } = getRecalculatedDryingBeds(updatedP, state.dryingBeds);
-                if (releasedBeds.length > 0) {
-                    alert(`Capacity released from: ${releasedBeds.map(b => b.uniqueNumber).join(', ')}`);
-                    updatedP.dryingBedIds = updatedBedIds;
-                }
-                return updatedP;
-            });
-        case 'ADD_BULK_DELIVERIES':
-             return updateProjectInState(state, action.payload.projectId, p => {
-                const newDeliveries = [...p.deliveries];
-                const existingKeys = new Set(newDeliveries.map(d => `${d.farmerId}-${d.date}-${d.weight}`));
-                for (const d of action.payload.deliveriesData) {
-                    const farmer = state.farmers.find(f => f.name.toLowerCase() === d.farmer_name?.trim().toLowerCase());
-                    if (!farmer) continue;
-                    const weight = parseFloat(d.weight_kg);
-                    if (weight <= 0) continue;
-                    const key = `${farmer.id}-${d.date}-${weight}`;
-                    if (existingKeys.has(key)) continue;
-                    const cost = parseFloat(d.cost);
-                    const cur = d.currency?.toUpperCase() === 'USD' ? 'USD' : 'UGX';
-                    const costUSD = cur === 'USD' ? cost : cost / p.exchangeRateUGXtoUSD;
-                    const farmerAdvances = p.advances.filter(a => a.farmerId === farmer.id).reduce((s, a) => s + a.amountUSD, 0);
-                    const priorOffsets = newDeliveries.filter(del => del.farmerId === farmer.id).reduce((s, del) => s + del.advanceOffsetUSD, 0);
-                    const advanceOffsetUSD = Math.min(farmerAdvances - priorOffsets, costUSD);
-                    newDeliveries.push({ id: crypto.randomUUID(), farmerId: farmer.id, date: d.date, weight, cost, currency: cur, costUSD, advanceOffsetUSD, amountPaidUSD: costUSD - advanceOffsetUSD, unripePercentage: 0, earlyRipePercentage: 0, optimalPercentage: 100, overRipePercentage: 0 });
-                    existingKeys.add(key);
-                }
-                const updatedP = { ...p, deliveries: newDeliveries };
-                const { updatedBedIds } = getRecalculatedDryingBeds(updatedP, state.dryingBeds);
-                updatedP.dryingBedIds = updatedBedIds;
-                return updatedP;
-            });
+                
+                const deliveryId = crypto.randomUUID();
+                newDeliveries.push({ 
+                    id: deliveryId, 
+                    farmerId: farmer.id, 
+                    date: d.date, 
+                    weight, 
+                    cost, 
+                    currency: cur, 
+                    costUSD, 
+                    advanceOffsetUSD, 
+                    amountPaidUSD: costUSD - advanceOffsetUSD, 
+                    unripePercentage: 0, 
+                    earlyRipePercentage: 0, 
+                    optimalPercentage: 100, 
+                    overRipePercentage: 0 
+                });
+
+                newPaymentLines.push({
+                    id: crypto.randomUUID(),
+                    deliveryId: deliveryId,
+                    farmerId: farmer.id,
+                    amount: cost,
+                    currency: cur,
+                    status: 'PENDING_ACCOUNTANT',
+                    date: d.date
+                });
+
+                existingKeys.add(key);
+            }
+
+            const updatedProject = { ...project, deliveries: newDeliveries };
+            const { updatedBedIds } = getRecalculatedDryingBeds(updatedProject, state.dryingBeds);
+            updatedProject.dryingBedIds = updatedBedIds;
+
+            return {
+                ...state,
+                paymentLines: newPaymentLines,
+                projects: state.projects.map(p => p.id === projectId ? updatedProject : p)
+            };
+        }
         case 'START_DRYING':
             return updateProjectInState(state, action.payload.projectId, p => {
                 if (p.dryingBatches.some(db => db.deliveryId === action.payload.deliveryId)) return p;
@@ -1062,6 +1272,12 @@ export const projectReducer = (state: ProjectState, action: AppProjectAction | a
     if (newState !== state) return newState;
     newState = handleOperations(state, action);
     if (newState !== state) return newState;
+    if (action.type === 'CLOSE_CONTAINER') {
+        return {
+            ...state,
+            containers: state.containers.map(c => c.id === action.payload.containerId ? { ...c, status: 'CLOSED' } : c)
+        };
+    }
     newState = handleMaintenance(state, action);
     return newState;
 };

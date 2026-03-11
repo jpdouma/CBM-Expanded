@@ -7,7 +7,7 @@ import { usePermissions } from '../hooks/usePermissions';
 import { useTheme } from '../context/ThemeProvider';
 
 interface AppHeaderProps {
-    activeSetting: 'hub' | 'dryingBeds' | 'clients' | 'financiers' | 'storageLocations' | 'farmers' | 'users' | 'roles' | 'costing' | 'pricing' | null;
+    activeSetting: 'hub' | 'dryingBeds' | 'clients' | 'financiers' | 'storageLocations' | 'farmers' | 'users' | 'roles' | 'costing' | 'pricing' | 'containers' | null;
     onSettingsClick: () => void;
     onActivityLogClick: () => void;
     onImport: () => void;

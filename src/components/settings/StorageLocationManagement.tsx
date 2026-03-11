@@ -12,16 +12,14 @@ interface StorageLocationManagementProps {
 const BatchGenerator: React.FC<{ onGenerate: (val: string) => void }> = ({ onGenerate }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [config, setConfig] = useState({
-        prefix: '',
         start: 1,
-        end: 10,
-        suffix: ''
+        end: 10
     });
 
     const handleGenerate = () => {
         const results: string[] = [];
         for (let i = config.start; i <= config.end; i++) {
-            results.push(`${config.prefix}${i}${config.suffix}`);
+            results.push(`${i}`);
         }
         onGenerate(results.join(', '));
         setIsOpen(false);
@@ -40,26 +38,6 @@ const BatchGenerator: React.FC<{ onGenerate: (val: string) => void }> = ({ onGen
             {isOpen && (
                 <div className="absolute z-50 mt-2 right-0 w-48 bg-gray-900 border border-gray-700 rounded-lg shadow-xl p-3 space-y-3 animate-in fade-in zoom-in duration-150">
                     <div className="space-y-2">
-                        <div className="grid grid-cols-2 gap-2">
-                            <div>
-                                <label className="block text-[10px] text-gray-500 uppercase">Prefix</label>
-                                <input 
-                                    type="text" 
-                                    value={config.prefix} 
-                                    onChange={e => setConfig({...config, prefix: e.target.value})}
-                                    className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-[10px] text-gray-500 uppercase">Suffix</label>
-                                <input 
-                                    type="text" 
-                                    value={config.suffix} 
-                                    onChange={e => setConfig({...config, suffix: e.target.value})}
-                                    className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white"
-                                />
-                            </div>
-                        </div>
                         <div className="grid grid-cols-2 gap-2">
                             <div>
                                 <label className="block text-[10px] text-gray-500 uppercase">Start</label>

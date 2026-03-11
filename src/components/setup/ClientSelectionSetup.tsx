@@ -42,58 +42,80 @@ export const ClientSelectionSetup: React.FC<ClientSelectionSetupProps> = ({ proj
         }
     };
 
+    const handleManualUpdate = (field: keyof ClientDetails, value: string) => {
+        onUpdateProject(project.id, {
+            clientDetails: {
+                ...clientDetails,
+                [field]: value,
+                id: '' // Clear ID if manually edited to detach from global sync
+            } as ClientDetails
+        });
+    };
+
     return (
         <div className="bg-gray-800 p-6 rounded-xl border border-gray-700 space-y-4">
-            <h3 className="text-lg font-bold text-white mb-4">Client Selection</h3>
+            <h3 className="text-lg font-bold text-white mb-4">Client Details</h3>
             
             <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-400 mb-1">Select Client (From Master Directory)</label>
+                <label className="block text-sm font-medium text-gray-400 mb-1">Select Existing Client</label>
                 <select 
                     value={clientDetails.id || ''}
                     onChange={(e) => handleClientSelect(e.target.value)}
                     className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-green-500"
                 >
-                    <option value="">-- Select an Existing Client --</option>
+                    <option value="">-- Custom / New Client --</option>
                     {clients.map(c => (
                         <option key={c.id} value={c.id}>{c.companyName}</option>
                     ))}
                 </select>
-                <p className="text-xs text-gray-500 mt-2">
-                    Clients must be created in the main Client Directory before they can be assigned to a project.
-                </p>
+                <p className="text-xs text-gray-500 mt-1">Selecting a client autofills the details below. Editing them manually will detach this project from the global client record.</p>
             </div>
 
-            {/* Read-only display of the selected client's details */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                     <label className="block text-sm font-medium text-gray-400 mb-1">Company Name</label>
-                    <div className="w-full bg-gray-900/50 border border-gray-700 rounded-lg px-4 py-2 text-gray-500 min-h-[42px] flex items-center">
-                        {clientDetails.companyName || '-'}
-                    </div>
+                    <input 
+                        type="text" 
+                        value={clientDetails.companyName || ''}
+                        onChange={e => handleManualUpdate('companyName', e.target.value)}
+                        className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-green-500"
+                    />
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-gray-400 mb-1">Contact Person</label>
-                    <div className="w-full bg-gray-900/50 border border-gray-700 rounded-lg px-4 py-2 text-gray-500 min-h-[42px] flex items-center">
-                        {clientDetails.generalName || '-'}
-                    </div>
+                    <input 
+                        type="text" 
+                        value={clientDetails.generalName || ''}
+                        onChange={e => handleManualUpdate('generalName', e.target.value)}
+                        className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-green-500"
+                    />
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-gray-400 mb-1">Email</label>
-                    <div className="w-full bg-gray-900/50 border border-gray-700 rounded-lg px-4 py-2 text-gray-500 min-h-[42px] flex items-center">
-                        {clientDetails.generalEmail || '-'}
-                    </div>
+                    <input 
+                        type="email" 
+                        value={clientDetails.generalEmail || ''}
+                        onChange={e => handleManualUpdate('generalEmail', e.target.value)}
+                        className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-green-500"
+                    />
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-gray-400 mb-1">Phone</label>
-                    <div className="w-full bg-gray-900/50 border border-gray-700 rounded-lg px-4 py-2 text-gray-500 min-h-[42px] flex items-center">
-                        {clientDetails.phone || '-'}
-                    </div>
+                    <input 
+                        type="text" 
+                        value={clientDetails.phone || ''}
+                        onChange={e => handleManualUpdate('phone', e.target.value)}
+                        className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-green-500"
+                    />
                 </div>
                 <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-400 mb-1">Address</label>
-                    <div className="w-full bg-gray-900/50 border border-gray-700 rounded-lg px-4 py-2 text-gray-500 min-h-[42px] flex items-center">
-                        {clientDetails.address || '-'}
-                    </div>
+                    <input 
+                        type="text" 
+                        value={clientDetails.address || ''}
+                        onChange={e => handleManualUpdate('address', e.target.value)}
+                        className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-green-500"
+                    />
                 </div>
             </div>
         </div>

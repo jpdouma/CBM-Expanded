@@ -18,7 +18,7 @@ export const PricingManagement: React.FC<PricingManagementProps> = ({ prices, on
         earlyRipe: '0',
         optimal: '0',
         overRipe: '0',
-        currency: 'UGX' as 'UGX' | 'USD'
+        currency: 'UGX' as 'UGX' | 'USD' | 'EUR'
     });
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -94,9 +94,10 @@ export const PricingManagement: React.FC<PricingManagementProps> = ({ prices, on
                         </div>
                         <div>
                             <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-2 tracking-wider">Currency *</label>
-                            <select required value={formData.currency} onChange={e => setFormData({...formData, currency: e.target.value as 'UGX' | 'USD'})} className="flex h-10 w-full rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 px-3 py-2 text-sm text-brand-dark dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-blue focus:border-brand-blue transition-all duration-200">
+                            <select required value={formData.currency} onChange={e => setFormData({...formData, currency: e.target.value as 'UGX' | 'USD' | 'EUR'})} className="flex h-10 w-full rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 px-3 py-2 text-sm text-brand-dark dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-blue focus:border-brand-blue transition-all duration-200">
                                 <option value="UGX">UGX</option>
                                 <option value="USD">USD</option>
+                                <option value="EUR">EUR</option>
                             </select>
                         </div>
                     </div>

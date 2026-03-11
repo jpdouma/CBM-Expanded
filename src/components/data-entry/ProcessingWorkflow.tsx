@@ -40,7 +40,6 @@ interface ProcessingWorkflowProps {
 
 const STAGE_CONFIG: Record<ProcessingStage, { label: string; icon: any; color: string }> = {
     RECEPTION: { label: 'Reception', icon: ClipboardList, color: 'blue' },
-    PRIMARY_PROCESSING: { label: 'Primary Processing', icon: Activity, color: 'cyan' },
     FLOATING: { label: 'Floating', icon: Waves, color: 'cyan' },
     PULPING: { label: 'Pulping', icon: Settings, color: 'indigo' },
     FERMENTATION: { label: 'Fermentation', icon: Beaker, color: 'purple' },
@@ -57,7 +56,6 @@ const STAGE_CONFIG: Record<ProcessingStage, { label: string; icon: any; color: s
 
 const STAGE_ORDER: ProcessingStage[] = [
     'RECEPTION',
-    'PRIMARY_PROCESSING',
     'FLOATING',
     'PULPING',
     'FERMENTATION',
@@ -80,6 +78,24 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
     const [selectedContainerIds, setSelectedContainerIds] = useState<string[]>([]);
     const [selectedBedId, setSelectedBedId] = useState<string>('');
     const [bundleSteps, setBundleSteps] = useState<ProcessingStage[]>([]);
+
+    // Tier Routing Logic: Skip specific wet stages for Tier 2 and Tier 3
+    const activeStageOrder = useMemo(() => {
+        if (project.tier === 'TARGET_SPECIALTY' || project.tier === 'MICRO_LOTS') {
+            // Skip Floating, Pulping, Fermentation
+            return STAGE_ORDER.filter(s => !['FLOATING', 'PULPING', 'FERMENTATION'].includes(s));
+        }
+        return STAGE_ORDER;
+    }, [project.tier]);
+
+    // Grouping for Taxonomy
+    const primaryStages = useMemo(() => 
+        activeStageOrder.filter(s => ['RECEPTION', 'FLOATING', 'PULPING', 'FERMENTATION', 'DESICCATION', 'RESTING'].includes(s)),
+    [activeStageOrder]);
+
+    const secondaryStages = useMemo(() => 
+        activeStageOrder.filter(s => !primaryStages.includes(s)),
+    [activeStageOrder, primaryStages]);
 
     // Filter containers for this project
     const projectDeliveryIds = project.deliveries.map(d => d.id);
@@ -105,7 +121,7 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
         
         // If moving to desiccation, we need a bed
         if (activeStage === 'RECEPTION' && !selectedBedId) {
-             // We'll assume for now bundling from reception goes to PRIMARY_PROCESSING or DESICCATION
+             // We'll assume for now bundling from reception goes to DESICCATION
              // The user request says "bundle 5 containers onto a drying bed"
         }
 
@@ -124,8 +140,8 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
     };
 
     const handleMoveToNextStage = (batchId: string) => {
-        const currentIndex = STAGE_ORDER.indexOf(activeStage);
-        const nextStage = STAGE_ORDER[currentIndex + 1];
+        const currentIndex = activeStageOrder.indexOf(activeStage);
+        const nextStage = activeStageOrder[currentIndex + 1];
         if (!nextStage) return;
 
         dispatch({
@@ -153,7 +169,7 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
 
     const canManageStage = (stage: ProcessingStage) => {
         if (stage === 'RECEPTION') return canLogReception;
-        if (['PRIMARY_PROCESSING', 'FLOATING', 'PULPING', 'FERMENTATION', 'DESICCATION'].includes(stage)) return canManagePrimary;
+        if (['FLOATING', 'PULPING', 'FERMENTATION', 'DESICCATION'].includes(stage)) return canManagePrimary;
         if (['RESTING', 'DE_STONING', 'HULLING', 'POLISHING', 'GRADING', 'DENSITY', 'COLOR_SORTING'].includes(stage)) return canManageSecondary;
         if (stage === 'EXPORT_READY') return canApproveQuality;
         return false;
@@ -164,9 +180,46 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
             {/* Side Navigation Panel */}
             <div className="w-full md:w-72 bg-white dark:bg-brand-dark rounded-xl border border-gray-200 dark:border-gray-700 overflow-y-auto p-2 space-y-1 shadow-md">
                 <div className="px-4 py-3 text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800 mb-2">
-                    Workflow Stages
+                    Primary Processing
                 </div>
-                {STAGE_ORDER.map(stage => {
+                {primaryStages.map(stage => {
+                    const config = STAGE_CONFIG[stage];
+                    if (!config) return null;
+                    const Icon = config.icon;
+                    const isActive = activeStage === stage;
+                    const count = project.processingBatches.filter(b => b.currentStage === stage && b.status !== 'COMPLETED').length;
+                    const hasAccess = canManageStage(stage);
+
+                    return (
+                        <button
+                            key={stage}
+                            onClick={() => handleStageChange(stage)}
+                            className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-heading font-bold transition-all duration-200 ${
+                                isActive 
+                                    ? 'bg-brand-blue/10 text-brand-blue dark:text-white border border-brand-blue/20 shadow-sm' 
+                                    : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:text-brand-dark dark:hover:text-gray-200 border border-transparent'
+                            } ${!hasAccess ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}
+                            disabled={!hasAccess}
+                        >
+                            <div className="flex items-center gap-3">
+                                <div className={`p-1.5 rounded-lg ${isActive ? 'bg-brand-blue/10' : 'bg-gray-100 dark:bg-gray-800'}`}>
+                                    <Icon className={`w-4 h-4 ${isActive ? 'text-brand-blue' : 'text-gray-400'}`} />
+                                </div>
+                                <span>{config.label}</span>
+                            </div>
+                            {count > 0 && (
+                                <Badge className={`${isActive ? 'bg-brand-blue text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'} border-none px-2 py-0.5 text-[10px]`}>
+                                    {count}
+                                </Badge>
+                            )}
+                        </button>
+                    );
+                })}
+
+                <div className="px-4 py-3 text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800 mt-4 mb-2">
+                    Secondary Processing
+                </div>
+                {secondaryStages.map(stage => {
                     const config = STAGE_CONFIG[stage];
                     if (!config) return null;
                     const Icon = config.icon;
@@ -237,18 +290,18 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                     <CardContent className="flex-1 overflow-y-auto p-6 space-y-8">
                         {/* Pipeline Progress Breadcrumb */}
                         <div className="flex items-center gap-2 overflow-x-auto pb-4 no-scrollbar">
-                            {STAGE_ORDER.slice(0, STAGE_ORDER.indexOf(activeStage) + 2).map((s, i) => (
+                            {activeStageOrder.slice(0, activeStageOrder.indexOf(activeStage) + 2).map((s, i) => (
                                 <React.Fragment key={s}>
                                     <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest whitespace-nowrap ${
                                         s === activeStage 
                                             ? 'bg-brand-blue text-white' 
-                                            : STAGE_ORDER.indexOf(s) < STAGE_ORDER.indexOf(activeStage)
+                                            : activeStageOrder.indexOf(s) < activeStageOrder.indexOf(activeStage)
                                                 ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500'
                                                 : 'bg-white dark:bg-brand-dark text-gray-300 dark:text-gray-700 border border-gray-100 dark:border-gray-800'
                                     }`}>
                                         {STAGE_CONFIG[s].label}
                                     </div>
-                                    {i < STAGE_ORDER.indexOf(activeStage) + 1 && i < STAGE_ORDER.length - 1 && (
+                                    {i < activeStageOrder.indexOf(activeStage) + 1 && i < activeStageOrder.length - 1 && (
                                         <ArrowRight className="w-3 h-3 text-gray-200 dark:text-gray-800 flex-shrink-0" />
                                     )}
                                 </React.Fragment>
@@ -467,7 +520,7 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                             className="bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 text-brand-dark dark:text-white font-bold border border-gray-200 dark:border-gray-700 rounded-xl h-10 px-4"
                                                             onClick={() => handleMoveToNextStage(batch.id)}
                                                         >
-                                                            {activeStage === 'RESTING' ? 'End Resting' : `Move to ${STAGE_ORDER[STAGE_ORDER.indexOf(activeStage) + 1] ? STAGE_CONFIG[STAGE_ORDER[STAGE_ORDER.indexOf(activeStage) + 1]].label : 'Next'}`}
+                                                            {activeStage === 'RESTING' ? 'End Resting' : `Move to ${activeStageOrder[activeStageOrder.indexOf(activeStage) + 1] ? STAGE_CONFIG[activeStageOrder[activeStageOrder.indexOf(activeStage) + 1]].label : 'Next'}`}
                                                             <ArrowRight className="w-4 h-4 ml-2 text-brand-blue" />
                                                         </Button>
                                                         <Button variant="ghost" size="icon" className="text-gray-400 hover:text-brand-dark dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full">
@@ -499,7 +552,7 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                     </div>
                     
                     <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
-                        {['PRIMARY_PROCESSING', 'FLOATING', 'PULPING', 'FERMENTATION', 'DESICCATION', 'RESTING'].map(stage => (
+                        {['FLOATING', 'PULPING', 'FERMENTATION', 'DESICCATION', 'RESTING'].map(stage => (
                             <div 
                                 key={stage} 
                                 className={`flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer ${

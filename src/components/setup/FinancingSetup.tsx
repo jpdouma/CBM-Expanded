@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { Project, Financier, Financing } from '../../types';
 import { Icon } from '../Icons';
 import { formatDate } from '../../utils/formatters';
+import { useAuth } from '../../context/AuthProvider';
 
 interface FinancingSetupProps {
     project: Project;
@@ -11,10 +12,13 @@ interface FinancingSetupProps {
 }
 
 export const FinancingSetup: React.FC<FinancingSetupProps> = ({ project, financiers, onAddFinancing, onDeleteFinancing }) => {
+    const { currentUser } = useAuth();
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [financierId, setFinancierId] = useState('');
     const [amountUSD, setAmountUSD] = useState('');
     const [interestRateAnnual, setInterestRateAnnual] = useState('');
+
+    const isAdministrator = currentUser?.role === 'Administrator' || currentUser?.roleId === 'system-admin-role';
 
     const handleFinancierChange = (id: string) => {
         setFinancierId(id);
@@ -94,7 +98,8 @@ export const FinancingSetup: React.FC<FinancingSetupProps> = ({ project, financi
                             step="0.1"
                             value={interestRateAnnual}
                             onChange={e => setInterestRateAnnual(e.target.value)}
-                            className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-green-500"
+                            disabled={!isAdministrator}
+                            className={`w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-green-500 ${!isAdministrator ? 'opacity-50 cursor-not-allowed' : ''}`}
                         />
                     </div>
                 </div>
@@ -133,7 +138,7 @@ export const FinancingSetup: React.FC<FinancingSetupProps> = ({ project, financi
                                         <td className="px-4 py-3 text-right font-mono">{f.interestRateAnnual}%</td>
                                         <td className="px-4 py-3 text-center">
                                             <button 
-                                                onClick={() => { if(confirm('Delete this financing record?')) onDeleteFinancing(project.id, f.id); }}
+                                                onClick={() => { if(window.confirm('Delete this financing record?')) onDeleteFinancing(project.id, f.id); }}
                                                 className="text-gray-400 hover:text-red-400 p-1"
                                             >
                                                 <Icon name="trash" className="w-4 h-4" />

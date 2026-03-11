@@ -7,6 +7,7 @@ interface RoleManagementProps {
     onAddRole: (role: Omit<Role, 'id'>) => void;
     onUpdateRole: (id: string, updates: Partial<Role>) => void;
     onDeleteRole: (id: string) => void;
+    onCloneRole: (id: string, newName: string) => void;
 }
 
 const ALL_PERMISSIONS: { id: Permission; label: string; category: string }[] = [
@@ -15,19 +16,28 @@ const ALL_PERMISSIONS: { id: Permission; label: string; category: string }[] = [
     { id: 'MANAGE_SETTINGS', label: 'Manage System Settings', category: 'Admin' },
     { id: 'MANAGE_USERS', label: 'Manage Users', category: 'Admin' },
     { id: 'MANAGE_ROLES', label: 'Manage Roles & Permissions', category: 'Admin' },
+    { id: 'MANAGE_CLIENTS', label: 'Manage Clients', category: 'Master Data' },
+    { id: 'MANAGE_FINANCIERS', label: 'Manage Financiers', category: 'Master Data' },
+    { id: 'MANAGE_STORAGE_LOCATIONS', label: 'Manage Storage Locations', category: 'Master Data' },
+    { id: 'MANAGE_CONTAINERS', label: 'Manage Containers', category: 'Master Data' },
     { id: 'MANAGE_FARMERS', label: 'Manage Farmers', category: 'Operations' },
     { id: 'LOG_RECEPTION', label: 'Log Cherry Reception', category: 'Operations' },
     { id: 'MANAGE_PRIMARY_PROCESSING', label: 'Manage Primary Processing', category: 'Operations' },
     { id: 'MANAGE_SECONDARY_PROCESSING', label: 'Manage Secondary Processing', category: 'Operations' },
+    { id: 'MANAGE_PROJECTS', label: 'Manage Projects', category: 'Operations' },
+    { id: 'VIEW_INVENTORY', label: 'View Global Inventory', category: 'Operations' },
     { id: 'APPROVE_TRANSITIONS_QUALITY', label: 'Approve Quality Transitions', category: 'Quality' },
     { id: 'APPROVE_PAYMENTS_ACCOUNTANT', label: 'Approve Payments (Accountant)', category: 'Finance' },
     { id: 'APPROVE_PAYMENTS_DIRECTOR', label: 'Approve Payments (Director)', category: 'Finance' },
     { id: 'EXECUTE_PAYMENTS', label: 'Execute Payments', category: 'Finance' },
     { id: 'SET_PRICING', label: 'Set Buying Prices', category: 'Finance' },
+    { id: 'VIEW_ACTIVITY_LOG', label: 'View Activity Log', category: 'Admin' },
+    { id: 'EXPORT_DATA', label: 'Export System Data', category: 'Admin' },
+    { id: 'IMPORT_DATA', label: 'Import System Data', category: 'Admin' },
     { id: 'VIEW_CLIENT_PORTAL', label: 'View Client Portal', category: 'Client' },
 ];
 
-export const RoleManagement: React.FC<RoleManagementProps> = ({ roles, onAddRole, onUpdateRole, onDeleteRole }) => {
+export const RoleManagement: React.FC<RoleManagementProps> = ({ roles, onAddRole, onUpdateRole, onDeleteRole, onCloneRole }) => {
     const [isAdding, setIsAdding] = useState(false);
     const [editingRole, setEditingRole] = useState<Role | null>(null);
     const [formData, setFormData] = useState<Omit<Role, 'id'>>({
@@ -36,6 +46,13 @@ export const RoleManagement: React.FC<RoleManagementProps> = ({ roles, onAddRole
         permissions: [],
         isSystem: false,
     });
+
+    const handleClone = (role: Role) => {
+        const newName = prompt('Enter name for the cloned role:', `${role.name} (Copy)`);
+        if (newName) {
+            onCloneRole(role.id, newName);
+        }
+    };
 
     const categories = Array.from(new Set(ALL_PERMISSIONS.map(p => p.category)));
 
@@ -167,31 +184,40 @@ export const RoleManagement: React.FC<RoleManagementProps> = ({ roles, onAddRole
                                     </h3>
                                     <p className="text-xs text-gray-400 mt-1">{role.description}</p>
                                 </div>
-                                {!role.isSystem && (
-                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button
-                                            onClick={() => {
-                                                setEditingRole(role);
-                                                setFormData({ ...role });
-                                            }}
-                                            className="p-1.5 text-gray-400 hover:text-blue-400 transition-colors"
-                                            title="Edit Role"
-                                        >
-                                            <Icon name="pencil" className="w-4 h-4" />
-                                        </button>
-                                        <button
-                                            onClick={() => {
-                                                if (window.confirm(`Are you sure you want to delete the "${role.name}" role?`)) {
-                                                    onDeleteRole(role.id);
-                                                }
-                                            }}
-                                            className="p-1.5 text-gray-400 hover:text-red-400 transition-colors"
-                                            title="Delete Role"
-                                        >
-                                            <Icon name="trash" className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                )}
+                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button
+                                        onClick={() => handleClone(role)}
+                                        className="p-1.5 text-gray-400 hover:text-green-400 transition-colors"
+                                        title="Clone Role"
+                                    >
+                                        <Icon name="documentDuplicate" className="w-4 h-4" />
+                                    </button>
+                                    {!role.isSystem && (
+                                        <>
+                                            <button
+                                                onClick={() => {
+                                                    setEditingRole(role);
+                                                    setFormData({ ...role });
+                                                }}
+                                                className="p-1.5 text-gray-400 hover:text-blue-400 transition-colors"
+                                                title="Edit Role"
+                                            >
+                                                <Icon name="pencil" className="w-4 h-4" />
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    if (window.confirm(`Are you sure you want to delete the "${role.name}" role?`)) {
+                                                        onDeleteRole(role.id);
+                                                    }
+                                                }}
+                                                className="p-1.5 text-gray-400 hover:text-red-400 transition-colors"
+                                                title="Delete Role"
+                                            >
+                                                <Icon name="trash" className="w-4 h-4" />
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
                             </div>
                             <div className="mt-4">
                                 <div className="text-[10px] text-gray-500 uppercase font-bold mb-2">Permissions ({role.permissions.length})</div>

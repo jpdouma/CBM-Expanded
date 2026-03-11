@@ -28,9 +28,10 @@ import { GlobalInventory } from './components/inventory/GlobalInventory';
 import { LoginScreen } from './components/auth/LoginScreen';
 import { QualityApprovalDashboard } from './components/dashboards/QualityApprovalDashboard';
 import { OutsourcedCostsDashboard } from './components/dashboards/OutsourcedCostsDashboard';
+import { ContainerManagement } from './components/settings/ContainerManagement';
 import type { ProcessingTier } from './types';
 
-type ActiveSetting = 'hub' | 'dryingBeds' | 'clients' | 'financiers' | 'storageLocations' | 'farmers' | 'users' | 'roles' | 'costing' | 'pricing' | null;
+type ActiveSetting = 'hub' | 'dryingBeds' | 'clients' | 'financiers' | 'storageLocations' | 'farmers' | 'users' | 'roles' | 'costing' | 'pricing' | 'containers' | null;
 type ActiveSetupTab = 'setup' | 'client' | 'financing';
 type Module = 'PROJECT_SETUP' | 'OPERATIONS' | 'APPROVALS' | 'FINANCE' | 'DASHBOARDS' | 'ACTIVITY_LOG' | 'GLOBAL_INVENTORY';
 type SubTab = 
@@ -49,9 +50,10 @@ const SettingsView: React.FC<{ activeSetting: ActiveSetting, setActiveSetting: (
         {activeSetting === 'storageLocations' && <SettingsHub activeSetting={activeSetting} onNavigate={setActiveSetting}><StorageLocationManagement locations={state.storageLocations} onAddLocation={(location) => dispatch({type: 'ADD_STORAGE_LOCATION', payload: {locationData: location}})} onUpdateLocation={(id, updates) => dispatch({type: 'UPDATE_STORAGE_LOCATION', payload: {locationId: id, updates}})} onDeleteLocation={(id) => dispatch({type: 'DELETE_STORAGE_LOCATION', payload: {locationId: id}})} /></SettingsHub>}
         {activeSetting === 'farmers' && <SettingsHub activeSetting={activeSetting} onNavigate={setActiveSetting}><FarmerManagement farmers={state.farmers} onAddFarmer={(farmer) => dispatch({type: 'ADD_FARMER', payload: {farmerData: farmer}})} onUpdateFarmer={(id, updates) => dispatch({type: 'UPDATE_FARMER', payload: {farmerId: id, updates}})} onDeleteFarmer={(id) => dispatch({type: 'DELETE_FARMER', payload: {farmerId: id}})} onBulkAddFarmers={(farmers) => dispatch({type: 'IMPORT_GLOBAL_FARMERS', payload: {farmersData: farmers}})} /></SettingsHub>}
         {activeSetting === 'users' && <SettingsHub activeSetting={activeSetting} onNavigate={setActiveSetting}><UserManagement users={state.users} roles={state.roles} onAddUser={(user) => dispatch({type: 'ADD_USER', payload: {userData: user}})} onUpdateUser={(id, updates) => dispatch({type: 'UPDATE_USER', payload: {userId: id, updates}})} onDeleteUser={(id) => dispatch({type: 'DELETE_USER', payload: {userId: id}})} /></SettingsHub>}
-        {activeSetting === 'roles' && <SettingsHub activeSetting={activeSetting} onNavigate={setActiveSetting}><RoleManagement roles={state.roles} onAddRole={(role) => dispatch({type: 'ADD_ROLE', payload: {roleData: role}})} onUpdateRole={(id, updates) => dispatch({type: 'UPDATE_ROLE', payload: {roleId: id, updates}})} onDeleteRole={(id) => dispatch({type: 'DELETE_ROLE', payload: {roleId: id}})} /></SettingsHub>}
+        {activeSetting === 'roles' && <SettingsHub activeSetting={activeSetting} onNavigate={setActiveSetting}><RoleManagement roles={state.roles} onAddRole={(role) => dispatch({type: 'ADD_ROLE', payload: {roleData: role}})} onUpdateRole={(id, updates) => dispatch({type: 'UPDATE_ROLE', payload: {roleId: id, updates}})} onDeleteRole={(id) => dispatch({type: 'DELETE_ROLE', payload: {roleId: id}})} onCloneRole={(id, newName) => dispatch({type: 'CLONE_ROLE', payload: {roleId: id, newName}})} /></SettingsHub>}
         {activeSetting === 'costing' && <SettingsHub activeSetting={activeSetting} onNavigate={setActiveSetting}><CostingManagement settings={state.globalSettings} onUpdateSettings={(updates) => dispatch({type: 'UPDATE_GLOBAL_SETTINGS', payload: {updates}})} /></SettingsHub>}
         {activeSetting === 'pricing' && <SettingsHub activeSetting={activeSetting} onNavigate={setActiveSetting}><PricingManagement prices={state.buyingPrices} onPublishPrices={(data) => dispatch({type: 'PUBLISH_BUYING_PRICES', payload: {data}})} /></SettingsHub>}
+        {activeSetting === 'containers' && <SettingsHub activeSetting={activeSetting} onNavigate={setActiveSetting}><ContainerManagement containers={state.containers} onGenerate={(count, date) => dispatch({type: 'GENERATE_CONTAINERS', payload: {count, date}})} onDelete={(id) => dispatch({type: 'DELETE_CONTAINER', payload: {containerId: id}})} /></SettingsHub>}
     </div>
 );
 

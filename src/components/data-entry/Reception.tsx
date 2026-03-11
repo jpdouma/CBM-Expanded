@@ -176,6 +176,58 @@ export const Reception: React.FC = () => {
 
                     <Button type="submit" className="w-full" disabled={!activePrices}>Log Delivery</Button>
                 </form>
+
+                {openContainers.length > 0 && (
+                    <div className="mt-8 space-y-4">
+                        <h3 className="text-lg font-semibold">Open Containers (End-of-Day Sweep)</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {openContainers.map(container => (
+                                <Card key={container.id} className="bg-blue-50/50 border-blue-100">
+                                    <CardContent className="pt-6">
+                                        <div className="flex justify-between items-start mb-4">
+                                            <div>
+                                                <p className="font-bold text-blue-900">{container.label}</p>
+                                                <p className="text-sm text-blue-700">{container.weight.toFixed(1)}kg / 48.0kg</p>
+                                            </div>
+                                            <Button 
+                                                variant="outline" 
+                                                size="sm"
+                                                className="text-blue-700 border-blue-200 hover:bg-blue-100"
+                                                onClick={() => {
+                                                    if (window.confirm(`Close container ${container.label}? This will move it to the next phase.`)) {
+                                                        dispatch({ type: 'CLOSE_CONTAINER', payload: { containerId: container.id } });
+                                                    }
+                                                }}
+                                            >
+                                                Close/Sweep
+                                            </Button>
+                                        </div>
+                                        <div className="w-full bg-blue-100 rounded-full h-2">
+                                            <div 
+                                                className="bg-blue-600 h-2 rounded-full transition-all" 
+                                                style={{ width: `${Math.min(100, (container.weight / 48) * 100)}%` }}
+                                            />
+                                        </div>
+                                        <div className="mt-4">
+                                            <p className="text-xs font-semibold text-blue-800 mb-1">Contributions:</p>
+                                            <div className="max-h-24 overflow-y-auto space-y-1">
+                                                {container.contributions.map((c, i) => {
+                                                    const farmer = state.farmers.find(f => f.id === c.farmerId);
+                                                    return (
+                                                        <div key={i} className="flex justify-between text-[10px] text-blue-600">
+                                                            <span>{farmer?.name || 'Unknown'}</span>
+                                                            <span>{c.weight.toFixed(1)}kg</span>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </CardContent>
         </Card>
     );

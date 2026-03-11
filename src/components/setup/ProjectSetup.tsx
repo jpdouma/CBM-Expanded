@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { Project } from '../../types';
 import { useProjects } from '../../context/ProjectProvider';
+import { useAuth } from '../../context/AuthProvider';
 import { ClientSelectionSetup } from './ClientSelectionSetup';
 import { PreProjectChecklist } from './PreProjectChecklist';
 import { FinancingSetup } from './FinancingSetup';
@@ -8,8 +9,6 @@ import { FinancialProjection } from '../dashboard/FinancialProjection';
 
 interface ProjectSetupProps {
     project: Project;
-    // Added this optional prop so we can check if they are an Admin
-    currentUser?: { role: string }; 
 }
 
 type SetupTab = 'details' | 'client' | 'financing' | 'projection';
@@ -24,8 +23,9 @@ const TabButton: React.FC<{ tabId: SetupTab, activeTab: SetupTab, setActiveTab: 
     </button>
 );
 
-export const ProjectSetup: React.FC<ProjectSetupProps> = ({ project, currentUser }) => {
+export const ProjectSetup: React.FC<ProjectSetupProps> = ({ project }) => {
     const { state, dispatch } = useProjects();
+    const { currentUser } = useAuth();
     const { clients = [], financiers = [] } = state;
     const [activeTab, setActiveTab] = useState<SetupTab>('details');
 
@@ -41,36 +41,10 @@ export const ProjectSetup: React.FC<ProjectSetupProps> = ({ project, currentUser
         dispatch({ type: 'DELETE_FINANCING', payload: { projectId, eventId } });
     };
 
-    // 👇 NEW LOGIC: The Warning Intercept
-    const handleFinalizeSetup = () => {
-        const isAdmin = currentUser?.role === 'Administrator';
-
-        if (!isAdmin) {
-            const isConfirmed = window.confirm(
-                "⚠️ WARNING: Marking this project as 100% complete will hide the Project Setup tab from your daily view. Are you sure you are ready to begin operations?"
-            );
-            
-            if (!isConfirmed) {
-                return; // Stop the function if they click Cancel
-            }
-        }
-
-        // Proceed to update the project progress
-        handleUpdateProject(project.id, { setupProgress: 100 }); 
-    };
-
     return (
         <div className="space-y-6">
             <div className="flex justify-between items-center">
                 <h2 className="text-2xl font-bold text-white">Project Setup: {project.name}</h2>
-                
-                {/* 👇 NEW LOGIC: The Finalize Button */}
-                <button 
-                    onClick={handleFinalizeSetup}
-                    className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-semibold transition-colors"
-                >
-                    Finalize Project Setup
-                </button>
             </div>
 
             <div className="border-b border-gray-700">
@@ -114,7 +88,8 @@ export const ProjectSetup: React.FC<ProjectSetupProps> = ({ project, currentUser
                                     <select
                                         value={project.tier || 'HIGH_COMMERCIAL'}
                                         onChange={e => handleUpdateProject(project.id, { tier: e.target.value as any })}
-                                        className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-green-500"
+                                        disabled={currentUser?.role !== 'Administrator'}
+                                        className={`w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-green-500 ${currentUser?.role !== 'Administrator' ? 'opacity-50 cursor-not-allowed' : ''}`}
                                     >
                                         <option value="HIGH_COMMERCIAL">High Commercial (Tier 1)</option>
                                         <option value="TARGET_SPECIALTY">Target Specialty (Tier 2)</option>

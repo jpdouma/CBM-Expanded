@@ -9,7 +9,7 @@ interface CostingManagementProps {
 }
 
 const STAGES: ProcessingStage[] = [
-    'RECEPTION', 'PRIMARY_PROCESSING', 'FLOATING', 'PULPING', 'FERMENTATION', 'DESICCATION', 'RESTING', 'DE_STONING', 'HULLING', 'POLISHING', 'GRADING', 'DENSITY', 'COLOR_SORTING', 'EXPORT_READY'
+    'RECEPTION', 'FLOATING', 'PULPING', 'FERMENTATION', 'DESICCATION', 'RESTING', 'DE_STONING', 'HULLING', 'POLISHING', 'GRADING', 'DENSITY', 'COLOR_SORTING', 'EXPORT_READY'
 ];
 
 export const CostingManagement: React.FC<CostingManagementProps> = ({ settings, onUpdateSettings }) => {

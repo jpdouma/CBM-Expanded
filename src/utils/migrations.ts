@@ -115,6 +115,7 @@ export const migrateLegacyState = (parsedState: any): ProjectState => {
         buyingPrices: parsedState.buyingPrices || [],
         paymentLines: parsedState.paymentLines || [],
         containers: parsedState.containers || [],
+        globalCurrency: parsedState.globalCurrency || 'USD',
     };
 };
 
