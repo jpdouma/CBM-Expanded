@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Icon } from './Icons';
 import { Logo } from './Logo';
-import type { Project, ProcessingTier } from '../types';
+import type { Project, ProcessingTier, Currency } from '../types';
 import { useAuth } from '../context/AuthProvider';
 import { usePermissions } from '../hooks/usePermissions';
 import { useTheme } from '../context/ThemeProvider';
+import { useProjects } from '../context/ProjectProvider';
 
 interface AppHeaderProps {
     activeSetting: 'hub' | 'dryingBeds' | 'clients' | 'financiers' | 'storageLocations' | 'farmers' | 'users' | 'roles' | 'costing' | 'pricing' | 'containers' | null;
@@ -12,7 +13,7 @@ interface AppHeaderProps {
     onActivityLogClick: () => void;
     onImport: () => void;
     onExport: () => void;
-    
+
     // Project Management Props
     projects: Project[];
     selectedProjectIds: string[];
@@ -22,11 +23,11 @@ interface AppHeaderProps {
     onSelectAllProjects?: () => void;
 }
 
-export const AppHeader: React.FC<AppHeaderProps> = ({ 
-    activeSetting, 
-    onSettingsClick, 
+export const AppHeader: React.FC<AppHeaderProps> = ({
+    activeSetting,
+    onSettingsClick,
     onActivityLogClick,
-    onImport, 
+    onImport,
     onExport,
     projects,
     selectedProjectIds,
@@ -38,6 +39,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
     const { currentUser, logout } = useAuth();
     const { canEdit, canManageSettings, canDelete } = usePermissions();
     const { theme, toggleTheme } = useTheme();
+    const { state, dispatch } = useProjects();
     const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
     const [newProjectName, setNewProjectName] = useState('');
     const [newProjectTier, setNewProjectTier] = useState<ProcessingTier>('HIGH_COMMERCIAL');
@@ -63,9 +65,9 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
     };
 
     // Calculate summary text for the button
-    const selectionLabel = selectedProjectIds.length === 0 
-        ? "Select Project" 
-        : selectedProjectIds.length === 1 
+    const selectionLabel = selectedProjectIds.length === 0
+        ? "Select Project"
+        : selectedProjectIds.length === 1
             ? projects.find(p => p.id === selectedProjectIds[0])?.name || "Unknown Project"
             : `${selectedProjectIds.length} Projects Selected`;
 
@@ -79,10 +81,10 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                         <span className="text-brand-red ml-0.5">.</span>
                     </h1>
                 </div>
-                
+
                 {/* Project Selector Dropdown */}
                 <div className="relative" ref={menuRef}>
-                    <button 
+                    <button
                         onClick={() => setIsProjectMenuOpen(!isProjectMenuOpen)}
                         className={`flex items-center gap-2 px-4 py-2 rounded-md border transition-colors ${selectedProjectIds.length > 0 ? 'bg-gray-100 dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-brand-dark dark:text-white' : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-600 text-gray-400'}`}
                     >
@@ -96,7 +98,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                             <div className="p-2 border-b border-gray-700 flex justify-between items-center bg-gray-900/30">
                                 <span className="text-xs font-bold text-gray-500 uppercase">Projects</span>
                                 {onSelectAllProjects && (
-                                    <button 
+                                    <button
                                         onClick={onSelectAllProjects}
                                         className="text-xs text-blue-400 hover:text-blue-300"
                                     >
@@ -107,24 +109,24 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                             <div className="p-2 border-b border-gray-700 max-h-60 overflow-y-auto">
                                 {projects.length === 0 && <p className="text-gray-500 text-sm p-2 text-center">No projects visible.</p>}
                                 {projects.map(p => {
-                                     const isSelected = selectedProjectIds.includes(p.id);
-                                     return (
-                                        <div 
-                                            key={p.id} 
+                                    const isSelected = selectedProjectIds.includes(p.id);
+                                    return (
+                                        <div
+                                            key={p.id}
                                             onClick={() => onProjectSelection(p.id)}
                                             className={`group flex items-center justify-between p-2 rounded cursor-pointer hover:bg-gray-700 ${isSelected ? 'bg-gray-700/50' : ''}`}
                                         >
                                             <div className="flex items-center gap-3 overflow-hidden">
-                                                <input 
-                                                    type="checkbox" 
-                                                    checked={isSelected} 
-                                                    readOnly 
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isSelected}
+                                                    readOnly
                                                     className="rounded border-gray-500 bg-gray-800 text-green-500 focus:ring-0 pointer-events-none"
                                                 />
                                                 <span className={`text-sm truncate ${isSelected ? 'text-white font-medium' : 'text-gray-300'}`}>{p.name}</span>
                                             </div>
                                             {canDelete && (
-                                                <button 
+                                                <button
                                                     type="button"
                                                     onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                                                     onClick={(e) => { e.stopPropagation(); onDeleteProject(e, p.id, p.name); }}
@@ -135,16 +137,16 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                                                 </button>
                                             )}
                                         </div>
-                                     );
+                                    );
                                 })}
                             </div>
-                            
+
                             {/* Add New Project Input */}
                             {canEdit && (
                                 <div className="p-2 bg-gray-900/50 flex flex-col gap-2">
                                     <div className="flex gap-2">
-                                        <input 
-                                            type="text" 
+                                        <input
+                                            type="text"
                                             value={newProjectName}
                                             onChange={(e) => setNewProjectName(e.target.value)}
                                             onKeyDown={(e) => e.key === 'Enter' && handleAddNew()}
@@ -152,7 +154,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                                             className="flex-grow bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-white focus:ring-1 focus:ring-green-500 outline-none"
                                             autoFocus
                                         />
-                                        <button 
+                                        <button
                                             onClick={handleAddNew}
                                             className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm font-bold"
                                         >
@@ -176,6 +178,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             </div>
 
             <div className="flex items-center gap-2">
+
                 <button
                     onClick={onActivityLogClick}
                     className="p-2 text-gray-500 dark:text-gray-400 hover:text-brand-blue dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
@@ -200,7 +203,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                     <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase font-bold">Logged in as</p>
                     <p className="text-sm font-bold text-brand-dark dark:text-white leading-none">{currentUser?.name}</p>
                 </div>
-                
+
                 {canManageSettings && (
                     <>
                         <button
@@ -229,13 +232,13 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                         <div className="h-8 w-px bg-gray-700 mx-1"></div>
                     </>
                 )}
-                
+
                 <button
                     onClick={logout}
                     className="p-2 text-red-400 hover:text-red-300 hover:bg-gray-700 rounded-md transition-colors flex items-center gap-2 text-sm font-bold"
                     title="Logout"
                 >
-                    <Icon name="arrowLeft" className="w-5 h-5" /> 
+                    <Icon name="arrowLeft" className="w-5 h-5" />
                     <span className="hidden sm:inline">Logout</span>
                 </button>
             </div>

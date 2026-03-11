@@ -1,4 +1,4 @@
-export type Currency = 'USD' | 'UGX';
+export type Currency = 'USD' | 'UGX' | 'EUR';
 
 export type Permission =
     | 'VIEW_DASHBOARD_FINANCE'
