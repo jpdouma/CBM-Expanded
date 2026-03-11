@@ -1,6 +1,8 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import type { Project } from '../../types';
-import { formatDate, dayDiff, generateTicks } from '../../utils/formatters';
+import type { Project, ForecastSnapshot } from '../../types';
+import { formatDate, dayDiff, generateTicks, formatCurrency } from '../../utils/formatters';
+import { useProjects } from '../../context/ProjectProvider';
+import { Icon } from '../Icons';
 
 interface FinancialProjectionProps {
     projects: Project[];
@@ -30,7 +32,7 @@ const InputField: React.FC<React.InputHTMLAttributes<HTMLInputElement> & { label
     );
 };
 
-const ProjectionChart: React.FC<{ data: ChartDataPoint[] }> = ({ data }) => {
+const ProjectionChart: React.FC<{ data: ChartDataPoint[], currency: string, rateUGX: number, rateEUR: number }> = ({ data, currency, rateUGX, rateEUR }) => {
     if (data.length === 0) return null;
 
     const height = 300;
@@ -63,10 +65,7 @@ const ProjectionChart: React.FC<{ data: ChartDataPoint[] }> = ({ data }) => {
     };
 
     const formatCurrencyCompact = (value: number): string => {
-        if (value === 0) return '$0';
-        if (Math.abs(value) < 1000) return value.toFixed(0);
-        const thousands = value / 1000;
-        return `$${thousands.toFixed(thousands % 1000 !== 0 ? 1 : 0)}k`;
+        return formatCurrency(value, currency as any, rateUGX, rateEUR, true);
     };
 
     const yTicks = generateTicks(Math.max(Math.abs(yMax), Math.abs(yMin)), 5);
@@ -191,13 +190,23 @@ const ProjectionChart: React.FC<{ data: ChartDataPoint[] }> = ({ data }) => {
 
 
 export const FinancialProjection: React.FC<FinancialProjectionProps> = ({ projects, onUpdateProject }) => {
-    
-    // Assuming single project for this component's estimation logic
+    const { state, dispatch } = useProjects();
     const singleProject = projects.length === 1 ? projects[0] : null;
+    const globalCurrency = state.globalCurrency || 'USD';
+    const rateUGX = singleProject?.exchangeRateUGXtoUSD || 3750;
+    const rateEUR = singleProject?.exchangeRateEURtoUSD || 0.92;
+
+    const formatValue = (value: number, compact = false) => {
+        return formatCurrency(value, globalCurrency, rateUGX, rateEUR, compact);
+    };
+    
     const [estimates, setEstimates] = useState({
         costPerKg: '',
         kgPerDay: '',
     });
+    
+    const [activeForecast, setActiveForecast] = useState<any>(null);
+    const [viewingSnapshotId, setViewingSnapshotId] = useState<string | null>(null);
 
     useEffect(() => {
         if(singleProject) {
@@ -209,36 +218,36 @@ export const FinancialProjection: React.FC<FinancialProjectionProps> = ({ projec
     }, [singleProject]);
 
     const handleEstimateChange = (field: 'costPerKg' | 'kgPerDay', value: string) => {
-        // Allow only numbers and one decimal point for cost, integers for kg
         const pattern = field === 'costPerKg' ? /^\d*\.?\d*$/ : /^\d*$/;
         if (pattern.test(value)) {
             setEstimates(e => ({...e, [field]: value }));
         }
     };
 
-    const handleEstimateBlur = () => {
+    const generateForecast = () => {
         if (!singleProject) return;
+        
         const costPerKgNum = parseFloat(estimates.costPerKg);
         const kgPerDayNum = parseInt(estimates.kgPerDay, 10);
 
-        onUpdateProject(singleProject.id, {
-            estCostPerKgCherryUSD: !isNaN(costPerKgNum) && costPerKgNum > 0 ? costPerKgNum : undefined,
-            estKgPerDayCherry: !isNaN(kgPerDayNum) && kgPerDayNum > 0 ? kgPerDayNum : undefined,
-        });
-    };
+        if (isNaN(costPerKgNum) || costPerKgNum <= 0 || isNaN(kgPerDayNum) || kgPerDayNum <= 0) {
+            alert("Please enter valid positive numbers for estimates.");
+            return;
+        }
 
-    const projectionResult = useMemo(() => {
-        // Helper to safe-guard numbers
-        const safeVal = (n: number | undefined) => (n !== undefined && !isNaN(n) && isFinite(n)) ? n : 0;
+        onUpdateProject(singleProject.id, {
+            estCostPerKgCherryUSD: costPerKgNum,
+            estKgPerDayCherry: kgPerDayNum,
+        });
 
         // 1. Build Historical Data
         const allTransactions: { date: Date, amount: number }[] = [];
         projects.forEach(p => {
-            (p.financing || []).forEach(f => allTransactions.push({ date: new Date(f.date), amount: safeVal(f.amountUSD) }));
-            (p.sales || []).forEach(s => allTransactions.push({ date: new Date(s.invoiceDate), amount: safeVal(s.totalSaleAmountUSD) }));
-            (p.setupCosts || []).forEach(sc => allTransactions.push({ date: new Date(sc.date), amount: -safeVal(sc.amountUSD) }));
-            (p.advances || []).forEach(a => allTransactions.push({ date: new Date(a.date), amount: -safeVal(a.amountUSD) }));
-            (p.deliveries || []).forEach(d => allTransactions.push({ date: new Date(d.date), amount: -safeVal(d.amountPaidUSD) }));
+            (p.financing || []).forEach(f => allTransactions.push({ date: new Date(f.date), amount: f.amountUSD || 0 }));
+            (p.sales || []).forEach(s => allTransactions.push({ date: new Date(s.invoiceDate), amount: s.totalSaleAmountUSD || 0 }));
+            (p.setupCosts || []).forEach(sc => allTransactions.push({ date: new Date(sc.date), amount: -(sc.amountUSD || 0) }));
+            (p.advances || []).forEach(a => allTransactions.push({ date: new Date(a.date), amount: -(a.amountUSD || 0) }));
+            (p.deliveries || []).forEach(d => allTransactions.push({ date: new Date(d.date), amount: -(d.amountPaidUSD || 0) }));
         });
         allTransactions.sort((a, b) => a.date.getTime() - b.date.getTime());
 
@@ -247,17 +256,10 @@ export const FinancialProjection: React.FC<FinancialProjectionProps> = ({ projec
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
-        // If no transactions, start at 0 today
         if (allTransactions.length === 0) {
             chartData.push({ date: today, balance: 0, type: 'historical' });
         } else {
-            // Process historical events day by day or event by event
-            // To make the chart smooth, let's just plot event points
-            // But we need to ensure we have a point for "Today"
-            
             let lastDate = allTransactions[0].date;
-            
-            // Initial point
             chartData.push({ date: lastDate, balance: 0, type: 'historical' });
 
             allTransactions.forEach(t => {
@@ -266,62 +268,32 @@ export const FinancialProjection: React.FC<FinancialProjectionProps> = ({ projec
                 lastDate = t.date;
             });
 
-            // If the last transaction wasn't today, add a point for today with current balance
             if (lastDate < today) {
                 chartData.push({ date: today, balance: currentBalance, type: 'historical' });
             }
         }
 
-        // 2. Calculate remaining requirements for Projection
-        const totalRequiredGreenBeanMass = projects.reduce((sum, p) => sum + safeVal(p.requiredGreenBeanMassKg), 0);
-        const avgShrinkFactor = projects.length > 0 ? projects.reduce((sum, p) => sum + safeVal(p.estShrinkFactor), 0) / projects.length : 6.25;
-        const totalRequiredCherryMass = totalRequiredGreenBeanMass * (avgShrinkFactor || 6.25);
+        // 2. Calculate remaining requirements
+        const totalRequiredGreenBeanMass = projects.reduce((sum, p) => sum + (p.requiredGreenBeanMassKg || 0), 0);
+        const avgShrinkFactor = projects.length > 0 ? projects.reduce((sum, p) => sum + (p.estShrinkFactor || 6.25), 0) / projects.length : 6.25;
+        const totalRequiredCherryMass = totalRequiredGreenBeanMass * avgShrinkFactor;
         
         const allDeliveries = projects.flatMap(p => p.deliveries || []);
-        const totalDeliveredCherryMass = allDeliveries.reduce((sum, d) => sum + safeVal(d.weight), 0);
+        const totalDeliveredCherryMass = allDeliveries.reduce((sum, d) => sum + (d.weight || 0), 0);
         const remainingCherryMass = totalRequiredCherryMass - totalDeliveredCherryMass;
 
         if (remainingCherryMass <= 0) {
-             // Project complete - just return historical data
-             return { 
+             setActiveForecast({ 
                  type: 'complete', 
                  message: "All required cherries have been purchased.",
                  chartData
-            };
+            });
+            return;
         }
 
-        // 3. Determine projection parameters
-        const hasHistory = allDeliveries.length > 0;
-        const totalDeliveryCostUSD = allDeliveries.reduce((sum, d) => sum + safeVal(d.costUSD), 0);
-        
-        const costPerKgNum = parseFloat(estimates.costPerKg);
-        const kgPerDayNum = parseInt(estimates.kgPerDay, 10);
+        const estimatedFutureCost = remainingCherryMass * costPerKgNum;
 
-        let avgCostPerKg = hasHistory && totalDeliveredCherryMass > 0 
-            ? totalDeliveryCostUSD / totalDeliveredCherryMass
-            : !isNaN(costPerKgNum) ? costPerKgNum : singleProject?.estCostPerKgCherryUSD;
-        
-        const firstDeliveryDate = hasHistory ? new Date(Math.min(...allDeliveries.map(d => new Date(d.date).getTime()))) : new Date();
-        const lastDeliveryDate = hasHistory ? new Date(Math.max(...allDeliveries.map(d => new Date(d.date).getTime()))) : new Date();
-        const deliveryPeriodDays = hasHistory ? dayDiff(firstDeliveryDate, lastDeliveryDate) : 0;
-        
-        let avgDailyDeliveryRate = hasHistory && deliveryPeriodDays > 0
-            ? totalDeliveredCherryMass / deliveryPeriodDays
-            : !isNaN(kgPerDayNum) ? kgPerDayNum : singleProject?.estKgPerDayCherry;
-
-        // Robust check against NaN/Undefined
-        if (avgCostPerKg === undefined || avgCostPerKg === null || isNaN(avgCostPerKg) || avgCostPerKg <= 0 || 
-            avgDailyDeliveryRate === undefined || avgDailyDeliveryRate === null || isNaN(avgDailyDeliveryRate) || avgDailyDeliveryRate <= 0) {
-             return { 
-                 type: 'needs_estimates', 
-                 message: "Enter positive estimates below to generate a pre-project forecast.",
-                 chartData
-            };
-        }
-
-        const estimatedFutureCost = remainingCherryMass * avgCostPerKg;
-
-        // 4. Simulate Future
+        // 3. Simulate Future
         let projectedBalance = currentBalance;
         let remainingToBuy = remainingCherryMass;
         let daysIntoFuture = 0;
@@ -332,8 +304,8 @@ export const FinancialProjection: React.FC<FinancialProjectionProps> = ({ projec
 
         while (remainingToBuy > 0 && daysIntoFuture < 365) {
             daysIntoFuture++;
-            const dailyPurchase = Math.min(avgDailyDeliveryRate, remainingToBuy);
-            const dailyCost = dailyPurchase * avgCostPerKg;
+            const dailyPurchase = Math.min(kgPerDayNum, remainingToBuy);
+            const dailyCost = dailyPurchase * costPerKgNum;
             projectedBalance -= dailyCost;
             remainingToBuy -= dailyPurchase;
 
@@ -347,100 +319,183 @@ export const FinancialProjection: React.FC<FinancialProjectionProps> = ({ projec
             }
         }
         
-        if (drawdownDate) {
-             drawdownAmount = Math.abs(projectedBalance);
-             return {
-                type: 'drawdown_needed',
-                drawdownDate,
-                drawdownAmount,
-                currentBalance,
-                estimatedFutureCost,
-                chartData
-             }
-        }
-
-        return { 
+        const result = drawdownDate ? {
+            type: 'drawdown_needed',
+            drawdownDate,
+            drawdownAmount: Math.abs(projectedBalance),
+            currentBalance,
+            estimatedFutureCost,
+            chartData
+        } : { 
             type: 'sufficient_funds', 
             message: "Current cash balance appears sufficient to cover all projected costs.",
             chartData
         };
 
-    }, [projects, singleProject, estimates]);
+        setActiveForecast(result);
+        setViewingSnapshotId(null);
+    };
+
+    const handleSaveSnapshot = () => {
+        if (!singleProject || !activeForecast) return;
+        
+        const name = prompt("Enter a name for this forecast snapshot:", `Forecast ${formatDate(new Date())}`);
+        if (!name) return;
+
+        const snapshot: ForecastSnapshot = {
+            id: crypto.randomUUID(),
+            date: new Date().toISOString(),
+            name,
+            velocity: parseInt(estimates.kgPerDay, 10),
+            costPerKg: parseFloat(estimates.costPerKg),
+            data: activeForecast.chartData.map((d: any) => ({ ...d, date: d.date.toISOString() }))
+        };
+
+        dispatch({ type: 'SAVE_FORECAST_SNAPSHOT', payload: { projectId: singleProject.id, snapshot } });
+        alert("Snapshot saved!");
+    };
+
+    const handleDeleteSnapshot = (snapshotId: string) => {
+        if (!singleProject) return;
+        if (window.confirm("Delete this snapshot?")) {
+            dispatch({ type: 'DELETE_FORECAST_SNAPSHOT', payload: { projectId: singleProject.id, snapshotId } });
+            if (viewingSnapshotId === snapshotId) {
+                setViewingSnapshotId(null);
+            }
+        }
+    };
+
+    const viewSnapshot = (snapshotId: string) => {
+        const snap = singleProject?.forecastSnapshots?.find(s => s.id === snapshotId);
+        if (snap) {
+            setViewingSnapshotId(snapshotId);
+            setActiveForecast({
+                type: 'snapshot',
+                message: `Viewing Snapshot: ${snap.name}`,
+                chartData: snap.data.map(d => ({ ...d, date: new Date(d.date) }))
+            });
+        }
+    };
 
     const renderResult = () => {
-        if (!projectionResult) return null;
+        if (!activeForecast) return <p className="text-gray-500 italic mt-4">Enter estimates and click Generate Forecast.</p>;
 
         const content = () => {
-            if (projectionResult.type === 'needs_estimates') {
-                 return (
-                     <>
-                        <p className="text-gray-400 mt-4">{projectionResult.message}</p>
-                         <div className="mt-4 p-4 border border-dashed border-gray-600 rounded-lg grid grid-cols-2 gap-4">
-                            <InputField 
-                                label="Est. Cost per kg of Cherry (USD)"
-                                type="text"
-                                inputMode="decimal"
-                                value={estimates.costPerKg}
-                                onChange={(e) => handleEstimateChange('costPerKg', e.target.value)}
-                                onBlur={handleEstimateBlur}
-                                placeholder="e.g., 2.5"
-                            />
-                            <InputField 
-                                label="Est. Daily Purchase Rate (kg)"
-                                type="text"
-                                inputMode="numeric"
-                                value={estimates.kgPerDay}
-                                onChange={(e) => handleEstimateChange('kgPerDay', e.target.value)}
-                                onBlur={handleEstimateBlur}
-                                 placeholder="e.g., 500"
-                            />
-                         </div>
-                    </>
-                );
-            }
-            
-            if (projectionResult.type === 'complete' || projectionResult.type === 'sufficient_funds') {
-                return <p className="text-gray-400 mt-4">{projectionResult.message}</p>;
+            if (activeForecast.type === 'complete' || activeForecast.type === 'sufficient_funds' || activeForecast.type === 'snapshot') {
+                return <p className="text-gray-400 mt-4">{activeForecast.message}</p>;
             }
     
-            if (projectionResult.type === 'drawdown_needed') {
+            if (activeForecast.type === 'drawdown_needed') {
                 return (
                     <div className="mt-4 space-y-3">
                         <div className="bg-yellow-900/50 border border-yellow-700 text-yellow-200 p-4 rounded-lg">
                             <p className="font-bold text-lg">Financing Drawdown Needed</p>
-                            <p>Based on current projections, you will likely need to draw funds around <span className="font-bold">{projectionResult.drawdownDate}</span>.</p>
-                            <p>Estimated amount needed: <span className="font-mono font-bold text-xl">{projectionResult.drawdownAmount.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}</span></p>
+                            <p>Based on current projections, you will likely need to draw funds around <span className="font-bold">{activeForecast.drawdownDate}</span>.</p>
+                             <p>Estimated amount needed: <span className="font-mono font-bold text-xl">{formatValue(activeForecast.drawdownAmount)}</span></p>
                         </div>
                         <div className="grid grid-cols-2 gap-4 text-sm">
                             <div className="bg-gray-700 p-3 rounded-md">
                                 <p className="text-gray-400">Current Cash Balance</p>
-                                <p className="font-mono font-semibold text-lg">{projectionResult.currentBalance.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}</p>
+                                <p className="font-mono font-semibold text-lg">{formatValue(activeForecast.currentBalance)}</p>
                             </div>
                             <div className="bg-gray-700 p-3 rounded-md">
                                 <p className="text-gray-400">Est. Future Purchase Costs</p>
-                                <p className="font-mono font-semibold text-lg">{projectionResult.estimatedFutureCost.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}</p>
+                                <p className="font-mono font-semibold text-lg">{formatValue(activeForecast.estimatedFutureCost)}</p>
                             </div>
                         </div>
-                        <p className="text-xs text-gray-500 italic mt-2">
-                            * Projection is based on { singleProject?.deliveries?.length ? 'historical average daily purchase rate and cost per kg of cherries.' : 'your provided estimates.'}
-                        </p>
                     </div>
                 );
             }
         };
 
         return (
-            <>
-                <ProjectionChart data={projectionResult.chartData} />
+            <div className="mt-6 border-t border-gray-700 pt-6">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-bold text-white">Forecast Results</h3>
+                    {activeForecast.type !== 'snapshot' && (
+                        <button 
+                            onClick={handleSaveSnapshot}
+                            className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded flex items-center gap-2"
+                        >
+                            <Icon name="archiveBox" className="w-4 h-4" /> Save Snapshot
+                        </button>
+                    )}
+                </div>
+                <ProjectionChart data={activeForecast.chartData} currency={globalCurrency} rateUGX={rateUGX} rateEUR={rateEUR} />
                 {content()}
-            </>
+            </div>
         );
     };
 
     return (
-        <div className="bg-gray-800 rounded-xl shadow-2xl p-6">
-            <h2 className="text-2xl font-bold text-white mb-4">Financial Projection</h2>
-            {renderResult()}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 bg-gray-800 rounded-xl shadow-2xl p-6">
+                <h2 className="text-2xl font-bold text-white mb-4">Financial Projection Engine</h2>
+                
+                <div className="p-4 border border-gray-600 rounded-lg bg-gray-900/50">
+                    <h3 className="text-sm font-bold text-gray-300 mb-3 uppercase tracking-wider">Forecast Parameters</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <InputField 
+                            label={`Est. Cost per kg of Cherry (${globalCurrency})`}
+                            type="text"
+                            inputMode="decimal"
+                            value={estimates.costPerKg}
+                            onChange={(e) => handleEstimateChange('costPerKg', e.target.value)}
+                            placeholder="e.g., 2.5"
+                        />
+                        <InputField 
+                            label="Est. Daily Purchase Velocity (kg)"
+                            type="text"
+                            inputMode="numeric"
+                            value={estimates.kgPerDay}
+                            onChange={(e) => handleEstimateChange('kgPerDay', e.target.value)}
+                            placeholder="e.g., 500"
+                        />
+                    </div>
+                    <div className="mt-4 flex justify-end">
+                        <button 
+                            onClick={generateForecast}
+                            className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg transition-all shadow-md"
+                        >
+                            Generate Forecast
+                        </button>
+                    </div>
+                </div>
+
+                {renderResult()}
+            </div>
+
+            <div className="bg-gray-800 rounded-xl shadow-2xl p-6">
+                <h3 className="text-lg font-bold text-white mb-4">Saved Snapshots</h3>
+                {singleProject?.forecastSnapshots && singleProject.forecastSnapshots.length > 0 ? (
+                    <div className="space-y-3">
+                        {singleProject.forecastSnapshots.map(snap => (
+                            <div 
+                                key={snap.id} 
+                                className={`p-3 rounded-lg border cursor-pointer transition-colors ${viewingSnapshotId === snap.id ? 'bg-gray-700 border-blue-500' : 'bg-gray-900 border-gray-700 hover:border-gray-500'}`}
+                                onClick={() => viewSnapshot(snap.id)}
+                            >
+                                <div className="flex justify-between items-start">
+                                    <p className="font-bold text-white text-sm">{snap.name}</p>
+                                    <button 
+                                        onClick={(e) => { e.stopPropagation(); handleDeleteSnapshot(snap.id); }}
+                                        className="text-gray-500 hover:text-red-400"
+                                    >
+                                        <Icon name="trash" className="w-4 h-4" />
+                                    </button>
+                                </div>
+                                <p className="text-xs text-gray-400 mt-1">{formatDate(new Date(snap.date))}</p>
+                                <div className="flex gap-3 mt-2 text-xs font-mono text-gray-300">
+                                    <span>Vel: {snap.velocity}kg/d</span>
+                                    <span>Cost: {formatValue(snap.costPerKg)}/kg</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <p className="text-gray-500 text-sm italic">No snapshots saved yet.</p>
+                )}
+            </div>
         </div>
     );
 };

@@ -29,7 +29,7 @@ export const formatDate = (date: Date | string): string => {
 export const dayDiff = (date1: Date, date2: Date): number => {
     const d1 = new Date(date1);
     const d2 = new Date(date2);
-    
+
     // Set to midnight UTC to remove time and timezone offset
     d1.setUTCHours(0, 0, 0, 0);
     d2.setUTCHours(0, 0, 0, 0);
@@ -75,4 +75,38 @@ export const generateTicks = (maxValue: number, tickCount = 5): number[] => {
         ticks.push(tick);
     }
     return ticks;
+};
+
+export const formatCurrency = (
+    value: number,
+    currencyCode: string = 'USD',
+    rateUGX: number = 3750,
+    rateEUR: number = 0.92,
+    compact: boolean = false
+): string => {
+    if (isNaN(value)) return '-';
+
+    let convertedValue = value;
+
+    // The system's base financial calculations are in USD. 
+    // We convert outward based on the active global currency toggle.
+    if (currencyCode === 'UGX') {
+        convertedValue = value * rateUGX;
+    } else if (currencyCode === 'EUR') {
+        convertedValue = value * rateEUR;
+    }
+
+    const options: Intl.NumberFormatOptions = {
+        style: 'currency',
+        currency: currencyCode,
+        // UGX doesn't use decimals, USD/EUR do
+        maximumFractionDigits: currencyCode === 'UGX' ? 0 : 2,
+    };
+
+    if (compact) {
+        options.notation = 'compact';
+        options.maximumFractionDigits = 1;
+    }
+
+    return new Intl.NumberFormat('en-US', options).format(convertedValue);
 };

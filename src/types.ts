@@ -1,6 +1,6 @@
 export type Currency = 'USD' | 'UGX';
 
-export type Permission = 
+export type Permission =
     | 'VIEW_DASHBOARD_FINANCE'
     | 'VIEW_DASHBOARD_OPS'
     | 'MANAGE_SETTINGS'
@@ -208,7 +208,7 @@ export interface Container {
     status: 'OPEN' | 'CLOSED';
 }
 
-export type ProcessingStage = 'RECEPTION' | 'PRIMARY_PROCESSING' | 'FLOATING' | 'PULPING' | 'FERMENTATION' | 'DESICCATION' | 'RESTING' | 'DE_STONING' | 'HULLING' | 'POLISHING' | 'GRADING' | 'DENSITY' | 'COLOR_SORTING' | 'EXPORT_READY';
+export type ProcessingStage = 'RECEPTION' | 'FLOATING' | 'PULPING' | 'FERMENTATION' | 'DESICCATION' | 'RESTING' | 'DE_STONING' | 'HULLING' | 'POLISHING' | 'GRADING' | 'DENSITY' | 'COLOR_SORTING' | 'EXPORT_READY';
 
 export type BatchStatus = 'IN_PROGRESS' | 'PENDING_APPROVAL' | 'COMPLETED';
 
@@ -234,26 +234,26 @@ export interface ProcessingBatch {
     moistureLogs: MoistureMeasurement[];
     cuppingScore?: number;
     history: ProcessingStepLog[];
-    
+
     // Logistics / Inventory
     warehouseLocation?: string;
-    storageZone?: string; 
-    storageRow?: string;  
-    palletId?: string;    
-    palletLevel?: string; 
-    
-    bagWeightKg?: number; 
+    storageZone?: string;
+    storageRow?: string;
+    palletId?: string;
+    palletLevel?: string;
+
+    bagWeightKg?: number;
     bagCount?: number;
-    
+
     // Transfer / Remainder tracking
     isTransfer?: boolean;
-    isRemainder?: boolean; 
-    consumedByBatchId?: string; 
+    isRemainder?: boolean;
+    consumedByBatchId?: string;
     sourceProjectId?: string;
 
     // EUDR
-    costBasisUSD?: number; 
-    traceabilitySnapshot?: { farmerId: string, weightKg: number }[]; 
+    costBasisUSD?: number;
+    traceabilitySnapshot?: { farmerId: string, weightKg: number }[];
 
     isOutsourced?: boolean;
     pendingApproval?: boolean;
@@ -289,18 +289,18 @@ export interface Sale {
     pricePerKg: number;
     currency: Currency;
     clientName: string;
-    
+
     // Financials
     totalSaleAmountUSD: number;
     totalCostUSD: number;
-    
+
     // Logistics
     incoterm?: string; // FOB, CIF, etc.
     logisticsCosts: LogisticsCost[];
-    
+
     // Payment Schedule
     installments: PaymentInstallment[];
-    
+
     // Document Data
     shippingAddress?: string;
     containerNumber?: string;
@@ -321,7 +321,7 @@ export interface ClientDetails {
     date: string;
     requestBy: string;
     role: string;
-    
+
     // Company Info
     companyName: string;
     website: string;
@@ -330,7 +330,7 @@ export interface ClientDetails {
     postCode: string;
     country: string;
     phone: string;
-    
+
     // Invoice Details
     invoiceAddress: string;
     invoiceCityAndState: string;
@@ -338,27 +338,27 @@ export interface ClientDetails {
     invoiceCountry: string;
     invoiceLanguage: string;
     defaultCurrency: string;
-    
+
     // General Contact
     generalName: string;
     generalTitle: string;
     generalEmail: string;
     generalPhone: string;
     generalMobile: string;
-    
+
     // Finance Contact
     financeName: string;
     financeTitle: string;
     financeEmail: string;
     financePhone: string;
     financeMobile: string;
-    
+
     // Registration & Tax
     vatNo: string;
     companyRegNo: string;
     eoriOrEinType: string;
     eoriOrEinValue: string;
-    
+
     // Banking Info
     bankName: string;
     accountName: string;
@@ -369,13 +369,13 @@ export interface ClientDetails {
     swiftOrBicValue: string;
     sortOrRoutingType: string;
     sortOrRoutingValue: string;
-    
+
     // Terms & Scope
     requestedCreditLimit: string;
     requestedPaymentTerms: string;
     debtorNoScope: string;
     creditorNoScope: string;
-    
+
     // Internal Checklist
     poa: boolean;
     scope: boolean;
@@ -390,7 +390,7 @@ export interface ClientDetails {
     exact: boolean;
     bank: boolean;
     remarks: string;
-    
+
     // Agreement
     agreementDate: string;
     signature: string;
@@ -430,12 +430,12 @@ export interface Project {
     startDate: string;
     estDryingTimeDays: number;
     estShrinkFactor: number;
-    
+
     // Cost Projections
     estCostPerKgCherryUSD?: number; // Calculated/Stored in USD for logic
     estCostPerKgCherry?: number; // User Input Amount
     estCostPerKgCherryCurrency?: Currency; // User Input Currency
-    
+
     estKgPerDayCherry?: number;
     isMachineDrying: boolean;
     dryingBedIds: string[];
@@ -452,7 +452,7 @@ export interface Project {
     setupCosts: ProjectSetupCost[];
     advances: Advance[];
     deliveries: Delivery[];
-    
+
     // NEW UNIFIED STATE MACHINE
     processingBatches: ProcessingBatch[];
 
@@ -465,7 +465,16 @@ export interface Project {
     sales: Sale[];
     financing: Financing[];
     // Helper to store client snapshot if needed, though typically we use clientId
-    clientDetails: ClientDetails; 
+    clientDetails: ClientDetails;
+}
+
+export interface ForecastSnapshot {
+    id: string;
+    date: string;
+    name: string;
+    velocity: number;
+    costPerKg: number;
+    data: { date: string; balance: number; type: 'historical' | 'projected' }[];
 }
 
 export interface ProjectState {
@@ -478,12 +487,13 @@ export interface ProjectState {
     farmers: Farmer[]; // Global Farmer Pool
     users: User[]; // Authenticated Users
     roles: Role[]; // RBAC Roles
-    
+    forecastSnapshots?: ForecastSnapshot[];
     // NEW GLOBAL STATE
     globalSettings: GlobalSettings;
     buyingPrices: BuyingPrices[];
     paymentLines: PaymentLine[];
     containers: Container[];
+    globalCurrency?: Currency;
 }
 
 export type ActivityLogEntryType = 'setup_cost' | 'financing' | 'advance' | 'delivery' | 'drying_start' | 'moisture_measurement' | 'storage' | 'hulling_start' | 'hulling_complete' | 'sale' | 'transfer_out' | 'transfer_in' | 'processing_step';
@@ -585,55 +595,59 @@ type StartDryingAction = { type: 'START_DRYING'; payload: { projectId: string; d
 type AddMoistureMeasurementAction = { type: 'ADD_MOISTURE_MEASUREMENT'; payload: { projectId: string; dryingBatchId: string; data: Omit<MoistureMeasurement, 'id'> } };
 type MoveToStorageAction = { type: 'MOVE_TO_STORAGE'; payload: { projectId: string; sourceId: string; sourceType: 'delivery' | 'dryingBatch'; storageDate: string; cuppingScore1: number } };
 type StartHullingAction = { type: 'START_HULLING'; payload: { projectId: string; storedBatchId: string; startDate: string } };
-type CompleteHullingAction = { 
-    type: 'COMPLETE_HULLING'; 
-    payload: { 
-        projectId: string; 
-        storedBatchIds: string[]; 
-        hullingDate: string; 
-        greenBeanWeight: number; 
-        cuppingScore2: number; 
+type CompleteHullingAction = {
+    type: 'COMPLETE_HULLING';
+    payload: {
+        projectId: string;
+        storedBatchIds: string[];
+        hullingDate: string;
+        greenBeanWeight: number;
+        cuppingScore2: number;
         warehouseLocation?: string;
         storageZone?: string;
-        bagWeightKg?: number; 
-        bagCount?: number; 
+        bagWeightKg?: number;
+        bagCount?: number;
         remainderWeight?: number;
         remainderLocation?: string;
         remainderStorageZone?: string;
         remainderPalletId?: string;
-        mergeRemainderBatchIds?: string[]; 
-    } 
+        mergeRemainderBatchIds?: string[];
+    }
 };
-type MoveBatchStockAction = { 
-    type: 'MOVE_BATCH_STOCK'; 
-    payload: { 
-        projectId: string; 
+type MoveBatchStockAction = {
+    type: 'MOVE_BATCH_STOCK';
+    payload: {
+        projectId: string;
         batchId: string;
-        bagsToMove: number; 
-        locationData: { 
-            storageRow: string; 
-            palletId: string; 
-            palletLevel: string; 
+        bagsToMove: number;
+        locationData: {
+            storageRow: string;
+            palletId: string;
+            palletLevel: string;
             storageZone?: string;
-        } 
-    } 
+        }
+    }
 };
 
-type AddSaleAction = { 
-    type: 'ADD_SALE'; 
-    payload: { 
-        projectId: string; 
+type AddSaleAction = {
+    type: 'ADD_SALE';
+    payload: {
+        projectId: string;
         data: Omit<Sale, 'id' | 'totalSaleAmountUSD' | 'hulledBatchIds'> & {
             items: { batchId: string; bags: number }[]
-        } 
-    } 
+        }
+    }
 };
 type TransferStockAction = { type: 'TRANSFER_STOCK'; payload: { sourceProjectId: string; targetProjectId: string; batchId: string; weight: number; date: string } };
 type UpdateEntryDateAction = { type: 'UPDATE_ENTRY_DATE', payload: { projectId: string, type: ActivityLogEntryType, id: string, newDate: string } };
 type BulkUpdateEntryDatesAction = { type: 'BULK_UPDATE_ENTRY_DATES', payload: { updates: { projectId: string; type: ActivityLogEntryType; id: string; newDate: string }[] } };
 type RecalculateUsdValuesAction = { type: 'RECALCULATE_USD_VALUES', payload: { progressCallback: (progress: number) => void } };
+type SaveForecastSnapshotAction = { type: 'SAVE_FORECAST_SNAPSHOT'; payload: { projectId: string; snapshot: ForecastSnapshot } };
+type DeleteForecastSnapshotAction = { type: 'DELETE_FORECAST_SNAPSHOT'; payload: { projectId: string; snapshotId: string } };
+type UpdateGlobalCurrencyAction = { type: 'UPDATE_GLOBAL_CURRENCY'; payload: { currency: Currency } };
 
 export type ProjectAction =
+
     | AddProjectAction
     | DeleteProjectAction
     | UpdateProjectAction
@@ -704,5 +718,7 @@ export type ProjectAction =
     | TransferStockAction
     | UpdateEntryDateAction
     | BulkUpdateEntryDatesAction
+    | SaveForecastSnapshotAction
+    | DeleteForecastSnapshotAction
+    | UpdateGlobalCurrencyAction
     | RecalculateUsdValuesAction;
-

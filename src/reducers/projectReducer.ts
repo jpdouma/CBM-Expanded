@@ -87,7 +87,7 @@ const handleProjectManagement = (state: ProjectState, action: any): ProjectState
             if (updates.isMachineDrying === true) {
                 updatedProject.dryingBedIds = [];
             }
-            
+
             if ('requiredGreenBeanMassKg' in updates || 'estShrinkFactor' in updates) {
                 const { updatedBedIds, releasedBeds } = getRecalculatedDryingBeds(updatedProject, state.dryingBeds);
                 if (releasedBeds.length > 0) {
@@ -96,7 +96,7 @@ const handleProjectManagement = (state: ProjectState, action: any): ProjectState
                 }
                 updatedProject.dryingBedIds = updatedBedIds;
             }
-            
+
             return {
                 ...state,
                 projects: state.projects.map(p => (p.id === projectId ? updatedProject : p)),
@@ -105,7 +105,7 @@ const handleProjectManagement = (state: ProjectState, action: any): ProjectState
         case 'SET_SELECTED_PROJECT_IDS':
             return { ...state, selectedProjectIds: action.payload.ids };
         case 'IMPORT_PROJECTS': {
-             const processedData = processImportedData(
+            const processedData = processImportedData(
                 action.payload.projects,
                 action.payload.clients,
                 action.payload.financiers,
@@ -128,9 +128,9 @@ const handleProjectManagement = (state: ProjectState, action: any): ProjectState
                 farmerIds: p.farmerIds || [],
                 preProjectChecklist: p.preProjectChecklist || { contractSigned: false, accountCardSubmitted: false, projectSetupComplete: false, forecastGenerated: false, firstWithdrawalReceived: false, projectStarted: false }
             }));
-            return { 
-                ...state, 
-                ...processedData, 
+            return {
+                ...state,
+                ...processedData,
                 projects,
                 selectedProjectIds: [],
                 containers: state.containers || [],
@@ -146,6 +146,18 @@ const handleProjectManagement = (state: ProjectState, action: any): ProjectState
                 preProjectChecklist: { ...p.preProjectChecklist, [key]: value },
             }));
         }
+        case 'SAVE_FORECAST_SNAPSHOT':
+            return updateProjectInState(state, action.payload.projectId, p => ({
+                ...p,
+                forecastSnapshots: [...(p.forecastSnapshots || []), action.payload.snapshot]
+            }));
+        case 'DELETE_FORECAST_SNAPSHOT':
+            return updateProjectInState(state, action.payload.projectId, p => ({
+                ...p,
+                forecastSnapshots: (p.forecastSnapshots || []).filter(s => s.id !== action.payload.snapshotId)
+            }));
+        case 'UPDATE_GLOBAL_CURRENCY':
+            return { ...state, globalCurrency: action.payload.currency };
         default: return state;
     }
 };
@@ -193,15 +205,17 @@ const handleSettings = (state: ProjectState, action: ProjectAction): ProjectStat
             return { ...state, clients: state.clients.filter(c => c.id !== action.payload.clientId) };
         case 'ADD_STORAGE_LOCATION': {
             const { locationData } = action.payload;
-            return { ...state, storageLocations: [...state.storageLocations, { 
-                ...locationData, 
-                id: crypto.randomUUID(),
-                facilityCode: locationData.facilityCode || locationData.name.substring(0,3).toUpperCase(),
-                allowedZones: locationData.allowedZones || [],
-                allowedRows: locationData.allowedRows || [],
-                allowedPallets: locationData.allowedPallets || [],
-                allowedLevels: locationData.allowedLevels || ['A', 'B', 'C']
-            }]};
+            return {
+                ...state, storageLocations: [...state.storageLocations, {
+                    ...locationData,
+                    id: crypto.randomUUID(),
+                    facilityCode: locationData.facilityCode || locationData.name.substring(0, 3).toUpperCase(),
+                    allowedZones: locationData.allowedZones || [],
+                    allowedRows: locationData.allowedRows || [],
+                    allowedPallets: locationData.allowedPallets || [],
+                    allowedLevels: locationData.allowedLevels || ['A', 'B', 'C']
+                }]
+            };
         }
         case 'UPDATE_STORAGE_LOCATION':
             return { ...state, storageLocations: state.storageLocations.map(l => l.id === action.payload.locationId ? { ...l, ...action.payload.updates } : l) };
@@ -213,7 +227,7 @@ const handleSettings = (state: ProjectState, action: ProjectAction): ProjectStat
             const month = (d.getMonth() + 1).toString().padStart(2, '0');
             const year = d.getFullYear().toString();
             const prefix = `${month}${year}`;
-            
+
             // Find existing containers for this month to get starting counter
             const existingForMonth = state.containers.filter(c => c.label.startsWith(prefix));
             let counter = 0;
@@ -313,7 +327,7 @@ const handleSettings = (state: ProjectState, action: ProjectAction): ProjectStat
             const { roleId, newName } = action.payload;
             const roleToClone = state.roles.find(r => r.id === roleId);
             if (!roleToClone) return state;
-            
+
             const clonedRole = {
                 ...roleToClone,
                 id: crypto.randomUUID(),
@@ -344,15 +358,15 @@ const handleFinance = (state: ProjectState, action: any): ProjectState => {
         case 'UPDATE_PROJECT_SETUP_COST':
             return updateProjectInState(state, action.payload.projectId, p => ({
                 ...p,
-                setupCosts: p.setupCosts.map(c => c.id === action.payload.costId ? 
-                    { ...c, ...action.payload.updates, amountUSD: (action.payload.updates.currency || c.currency) === 'USD' ? (action.payload.updates.amount ?? c.amount) : (action.payload.updates.amount ?? c.amount) / p.exchangeRateUGXtoUSD } 
+                setupCosts: p.setupCosts.map(c => c.id === action.payload.costId ?
+                    { ...c, ...action.payload.updates, amountUSD: (action.payload.updates.currency || c.currency) === 'USD' ? (action.payload.updates.amount ?? c.amount) : (action.payload.updates.amount ?? c.amount) / p.exchangeRateUGXtoUSD }
                     : c)
             }));
         case 'REMOVE_PROJECT_SETUP_COST':
             // FIX: Use action.payload.projectId and action.payload.costId
-            return updateProjectInState(state, action.payload.projectId, p => ({ 
-                ...p, 
-                setupCosts: p.setupCosts.filter(c => c.id !== action.payload.costId) 
+            return updateProjectInState(state, action.payload.projectId, p => ({
+                ...p,
+                setupCosts: p.setupCosts.filter(c => c.id !== action.payload.costId)
             }));
         case 'ADD_FINANCING':
             return updateProjectInState(state, action.payload.projectId, p => {
@@ -373,7 +387,7 @@ const handleFinance = (state: ProjectState, action: any): ProjectState => {
 
             const amountUSD = data.currency === 'USD' ? data.amount : data.amount / project.exchangeRateUGXtoUSD;
             const advanceId = crypto.randomUUID();
-            
+
             const newPaymentLine: PaymentLine = {
                 id: crypto.randomUUID(),
                 deliveryId: advanceId,
@@ -410,19 +424,19 @@ const handleFinance = (state: ProjectState, action: any): ProjectState => {
                 const amt = parseFloat(d.amount);
                 if (amt <= 0) continue;
                 const key = `${farmer.id}-${d.date}-${amt}`;
-                
+
                 if (!existingKeys.has(key)) {
                     const cur = d.currency?.toUpperCase() === 'USD' ? 'USD' : 'UGX';
                     const advanceId = crypto.randomUUID();
                     const amountUSD = cur === 'USD' ? amt : amt / project.exchangeRateUGXtoUSD;
-                    
-                    newAdvances.push({ 
-                        id: advanceId, 
-                        farmerId: farmer.id, 
-                        date: d.date, 
-                        amount: amt, 
-                        currency: cur, 
-                        amountUSD 
+
+                    newAdvances.push({
+                        id: advanceId,
+                        farmerId: farmer.id,
+                        date: d.date,
+                        amount: amt,
+                        currency: cur,
+                        amountUSD
                     });
 
                     newPaymentLines.push({
@@ -458,9 +472,9 @@ const handleFinance = (state: ProjectState, action: any): ProjectState => {
         case 'UPDATE_PAYMENT_LINE_STATUS':
             return {
                 ...state,
-                paymentLines: (state.paymentLines || []).map(pl => 
-                    pl.id === action.payload.paymentLineId 
-                        ? { ...pl, status: action.payload.status, authCode: action.payload.authCode || pl.authCode } 
+                paymentLines: (state.paymentLines || []).map(pl =>
+                    pl.id === action.payload.paymentLineId
+                        ? { ...pl, status: action.payload.status, authCode: action.payload.authCode || pl.authCode }
                         : pl
                 )
             };
@@ -488,9 +502,9 @@ const handleFinance = (state: ProjectState, action: any): ProjectState => {
             const ov = overRipe / 100;
 
             const payout = (w * u * activePrices.unripe) +
-                           (w * e * activePrices.earlyRipe) +
-                           (w * o * activePrices.optimal) +
-                           (w * ov * activePrices.overRipe);
+                (w * e * activePrices.earlyRipe) +
+                (w * o * activePrices.optimal) +
+                (w * ov * activePrices.overRipe);
 
             const deliveryId = action.payload.deliveryId || crypto.randomUUID();
             const costUSD = activePrices.currency === 'USD' ? payout : payout / project.exchangeRateUGXtoUSD;
@@ -527,7 +541,7 @@ const handleFinance = (state: ProjectState, action: any): ProjectState => {
                     const currentWeight = updatedContainers[cIdx].weight || 0;
                     const availableSpace = Math.max(0, MAX_CAPACITY - currentWeight);
                     const weightToAdd = Math.min(remainingWeight, availableSpace);
-                    
+
                     if (weightToAdd > 0) {
                         updatedContainers[cIdx] = {
                             ...updatedContainers[cIdx],
@@ -543,12 +557,12 @@ const handleFinance = (state: ProjectState, action: any): ProjectState => {
             // 2. Fill other open containers if weight remains
             while (remainingWeight > 0) {
                 const openContainerIdx = updatedContainers.findIndex(c => c.status === 'OPEN' && (c.weight || 0) < MAX_CAPACITY);
-                
+
                 if (openContainerIdx !== -1) {
                     const c = updatedContainers[openContainerIdx];
                     const availableSpace = MAX_CAPACITY - (c.weight || 0);
                     const weightToAdd = Math.min(remainingWeight, availableSpace);
-                    
+
                     updatedContainers[openContainerIdx] = {
                         ...c,
                         weight: (c.weight || 0) + weightToAdd,
@@ -597,9 +611,9 @@ const handleFinance = (state: ProjectState, action: any): ProjectState => {
         case 'APPROVE_PAYMENT_ACCOUNTANT': {
             return {
                 ...state,
-                paymentLines: (state.paymentLines || []).map(pl => 
-                    pl.id === action.payload.paymentLineId 
-                        ? { ...pl, status: 'PENDING_DIRECTOR' } 
+                paymentLines: (state.paymentLines || []).map(pl =>
+                    pl.id === action.payload.paymentLineId
+                        ? { ...pl, status: 'PENDING_DIRECTOR' }
                         : pl
                 )
             };
@@ -607,9 +621,9 @@ const handleFinance = (state: ProjectState, action: any): ProjectState => {
         case 'APPROVE_PAYMENT_DIRECTOR': {
             return {
                 ...state,
-                paymentLines: (state.paymentLines || []).map(pl => 
-                    pl.id === action.payload.paymentLineId 
-                        ? { ...pl, status: 'APPROVED_FOR_EXECUTION', authCode: action.payload.authCode } 
+                paymentLines: (state.paymentLines || []).map(pl =>
+                    pl.id === action.payload.paymentLineId
+                        ? { ...pl, status: 'APPROVED_FOR_EXECUTION', authCode: action.payload.authCode }
                         : pl
                 )
             };
@@ -646,7 +660,7 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
         case 'UPDATE_CONTAINER':
             return {
                 ...state,
-                containers: (state.containers || []).map(c => 
+                containers: (state.containers || []).map(c =>
                     c.id === action.payload.containerId ? { ...c, ...action.payload.updates } : c
                 )
             };
@@ -659,10 +673,10 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
                 }
                 const containers = (state.containers || []).filter(c => containerIds.includes(c.id));
                 const totalWeight = containers.reduce((sum, c) => sum + c.weight, 0);
-                
+
                 const d = new Date(startDate);
                 const dayOfWeek = d.getDay() === 0 ? 7 : d.getDay();
-                
+
                 const target = new Date(d.valueOf());
                 const dayNr = (d.getDay() + 6) % 7;
                 target.setDate(target.getDate() - dayNr + 3);
@@ -672,15 +686,15 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
                     target.setMonth(0, 1 + ((4 - target.getDay()) + 7) % 7);
                 }
                 const weekNum = 1 + Math.ceil((firstThursday - target.valueOf()) / 604800000);
-                
+
                 const weekStr = weekNum.toString().padStart(2, '0');
                 const year = d.getFullYear().toString().slice(-2);
-                
+
                 const bed = state.dryingBeds.find(b => b.id === dryingBedId);
                 const bedName = bed ? bed.uniqueNumber : 'UnknownBed';
-                
+
                 const batchId = `${dayOfWeek}-wk${weekStr}${year}-${bedName}`;
-                
+
                 const newBatch: ProcessingBatch = {
                     id: batchId,
                     projectId: p.id,
@@ -695,7 +709,7 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
                         startDate,
                     }]
                 };
-                
+
                 return {
                     ...p,
                     processingBatches: [...(p.processingBatches || []), newBatch]
@@ -707,13 +721,13 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
             const stages = payload.stages || [payload.stage];
             const project = state.projects.find(p => p.id === projectId);
             if (!project) return state;
-            
+
             const batch = (project.processingBatches || []).find(b => b.id === batchId);
             if (!batch) return state;
-            
+
             const updatedHistory = [...batch.history];
             const stagesArray = Array.isArray(stages) ? stages : [stages];
-            
+
             stagesArray.forEach((stage: ProcessingStage) => {
                 const existingIndex = updatedHistory.findIndex(h => h.stage === stage && !h.endDate);
                 if (existingIndex !== -1) {
@@ -737,19 +751,19 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
                     });
                 }
             });
-            
+
             const updatedBatch = {
                 ...batch,
                 status: 'PENDING_APPROVAL' as const,
                 weight: weightOut ?? batch.weight,
                 history: updatedHistory
             };
-            
+
             const updatedProject = {
                 ...project,
                 processingBatches: project.processingBatches.map(b => b.id === batchId ? updatedBatch : b)
             };
-            
+
             let newPaymentLines = state.paymentLines || [];
             if (isOutsourced && outsourcedCost) {
                 newPaymentLines = [
@@ -765,7 +779,7 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
                     }
                 ];
             }
-            
+
             return {
                 ...state,
                 paymentLines: newPaymentLines,
@@ -776,47 +790,47 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
             const { projectId, batchId, approvedBy } = action.payload;
             const project = state.projects.find(p => p.id === projectId);
             if (!project) return state;
-            
+
             const batch = (project.processingBatches || []).find(b => b.id === batchId);
             if (!batch) return state;
-            
+
             const updatedHistory = [...batch.history];
             const unapprovedSteps = updatedHistory.filter(h => h.endDate && !h.approvedBy);
-            
+
             unapprovedSteps.forEach(step => {
                 const idx = updatedHistory.findIndex(h => h === step);
                 updatedHistory[idx] = { ...step, approvedBy };
             });
-            
+
             const stagesList: ProcessingStage[] = ['RECEPTION', 'FLOATING', 'PULPING', 'FERMENTATION', 'DESICCATION', 'RESTING', 'DE_STONING', 'HULLING', 'POLISHING', 'GRADING', 'DENSITY', 'COLOR_SORTING', 'EXPORT_READY'];
-            
+
             const lastCompletedStage = updatedHistory.slice().reverse().find(h => h.endDate)?.stage || batch.currentStage;
             const currentIndex = stagesList.indexOf(lastCompletedStage);
             const nextStage = currentIndex < stagesList.length - 1 ? stagesList[currentIndex + 1] : lastCompletedStage;
-            
+
             if (nextStage !== lastCompletedStage && !updatedHistory.some(h => h.stage === nextStage)) {
                 updatedHistory.push({
                     stage: nextStage,
                     startDate: new Date().toISOString().split('T')[0]
                 });
             }
-            
+
             const updatedBatch = {
                 ...batch,
                 status: nextStage === 'EXPORT_READY' ? 'COMPLETED' as const : 'IN_PROGRESS' as const,
                 currentStage: nextStage,
                 history: updatedHistory
             };
-            
+
             if (nextStage === 'RESTING' && updatedBatch.dryingBedId) {
                 updatedBatch.dryingBedId = undefined;
             }
-            
+
             const updatedProject = {
                 ...project,
                 processingBatches: project.processingBatches.map(b => b.id === batchId ? updatedBatch : b)
             };
-            
+
             return {
                 ...state,
                 projects: state.projects.map(p => p.id === projectId ? updatedProject : p)
@@ -826,7 +840,7 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
             const { projectId, batchId, officialStartDate, approvedBy } = action.payload;
             return updateProjectInState(state, projectId, p => ({
                 ...p,
-                processingBatches: (p.processingBatches || []).map(b => 
+                processingBatches: (p.processingBatches || []).map(b =>
                     b.id === batchId ? {
                         ...b,
                         status: 'IN_PROGRESS',
@@ -839,7 +853,7 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
             const { projectId, batchId, stage, cost } = action.payload;
             return updateProjectInState(state, projectId, p => ({
                 ...p,
-                processingBatches: (p.processingBatches || []).map(b => 
+                processingBatches: (p.processingBatches || []).map(b =>
                     b.id === batchId ? {
                         ...b,
                         history: b.history.map(h => h.stage === stage ? { ...h, outsourcedCost: cost } : h)
@@ -850,124 +864,21 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
         case 'ADD_BATCH_MOISTURE_MEASUREMENT':
             return updateProjectInState(state, action.payload.projectId, p => ({
                 ...p,
-                processingBatches: (p.processingBatches || []).map(b => 
-                    b.id === action.payload.batchId 
-                        ? { ...b, moistureLogs: [...(b.moistureLogs || []), { ...action.payload.data, id: crypto.randomUUID() }] } 
+                processingBatches: (p.processingBatches || []).map(b =>
+                    b.id === action.payload.batchId
+                        ? { ...b, moistureLogs: [...(b.moistureLogs || []), { ...action.payload.data, id: crypto.randomUUID() }] }
                         : b
                 )
             }));
         case 'UPDATE_BATCH_CUPPING_SCORE':
             return updateProjectInState(state, action.payload.projectId, p => ({
                 ...p,
-                processingBatches: (p.processingBatches || []).map(b => 
-                    b.id === action.payload.batchId 
-                        ? { ...b, cuppingScore: action.payload.score } 
+                processingBatches: (p.processingBatches || []).map(b =>
+                    b.id === action.payload.batchId
+                        ? { ...b, cuppingScore: action.payload.score }
                         : b
                 )
             }));
-        case 'ADD_DELIVERY': {
-            const { projectId, data } = action.payload;
-            const project = state.projects.find(p => p.id === projectId);
-            if (!project) return state;
-
-            const costUSD = data.currency === 'USD' ? data.cost : data.cost / project.exchangeRateUGXtoUSD;
-            const farmerAdvances = project.advances.filter(a => a.farmerId === data.farmerId).reduce((s, a) => s + a.amountUSD, 0);
-            const priorOffsets = project.deliveries.filter(d => d.farmerId === data.farmerId).reduce((s, d) => s + d.advanceOffsetUSD, 0);
-            const advanceOffsetUSD = Math.min(farmerAdvances - priorOffsets, costUSD);
-            const amountPaidUSD = costUSD - advanceOffsetUSD;
-
-            const deliveryId = data.id || crypto.randomUUID();
-            const newDelivery = { ...data, id: deliveryId, costUSD, advanceOffsetUSD, amountPaidUSD };
-
-            const newPaymentLine: PaymentLine = {
-                id: crypto.randomUUID(),
-                deliveryId: deliveryId,
-                farmerId: data.farmerId,
-                amount: data.cost,
-                currency: data.currency,
-                status: 'PENDING_ACCOUNTANT',
-                date: data.date
-            };
-
-            const updatedProject = { 
-                ...project, 
-                deliveries: [...project.deliveries, newDelivery] 
-            };
-
-            const { updatedBedIds } = getRecalculatedDryingBeds(updatedProject, state.dryingBeds);
-            updatedProject.dryingBedIds = updatedBedIds;
-
-            return {
-                ...state,
-                paymentLines: [...(state.paymentLines || []), newPaymentLine],
-                projects: state.projects.map(p => p.id === projectId ? updatedProject : p)
-            };
-        }
-        case 'ADD_BULK_DELIVERIES': {
-            const { projectId, deliveriesData } = action.payload;
-            const project = state.projects.find(p => p.id === projectId);
-            if (!project) return state;
-
-            const newDeliveries = [...project.deliveries];
-            const newPaymentLines = [...(state.paymentLines || [])];
-            const existingKeys = new Set(newDeliveries.map(d => `${d.farmerId}-${d.date}-${d.weight}`));
-
-            for (const d of deliveriesData) {
-                const farmer = state.farmers.find(f => f.name.toLowerCase() === d.farmer_name?.trim().toLowerCase());
-                if (!farmer) continue;
-                const weight = parseFloat(d.weight_kg);
-                if (weight <= 0) continue;
-                const key = `${farmer.id}-${d.date}-${weight}`;
-                if (existingKeys.has(key)) continue;
-
-                const cost = parseFloat(d.cost);
-                const cur = d.currency?.toUpperCase() === 'USD' ? 'USD' : 'UGX';
-                const costUSD = cur === 'USD' ? cost : cost / project.exchangeRateUGXtoUSD;
-                
-                const farmerAdvances = project.advances.filter(a => a.farmerId === farmer.id).reduce((s, a) => s + a.amountUSD, 0);
-                const priorOffsets = newDeliveries.filter(del => del.farmerId === farmer.id).reduce((s, del) => s + del.advanceOffsetUSD, 0);
-                const advanceOffsetUSD = Math.min(farmerAdvances - priorOffsets, costUSD);
-                
-                const deliveryId = crypto.randomUUID();
-                newDeliveries.push({ 
-                    id: deliveryId, 
-                    farmerId: farmer.id, 
-                    date: d.date, 
-                    weight, 
-                    cost, 
-                    currency: cur, 
-                    costUSD, 
-                    advanceOffsetUSD, 
-                    amountPaidUSD: costUSD - advanceOffsetUSD, 
-                    unripePercentage: 0, 
-                    earlyRipePercentage: 0, 
-                    optimalPercentage: 100, 
-                    overRipePercentage: 0 
-                });
-
-                newPaymentLines.push({
-                    id: crypto.randomUUID(),
-                    deliveryId: deliveryId,
-                    farmerId: farmer.id,
-                    amount: cost,
-                    currency: cur,
-                    status: 'PENDING_ACCOUNTANT',
-                    date: d.date
-                });
-
-                existingKeys.add(key);
-            }
-
-            const updatedProject = { ...project, deliveries: newDeliveries };
-            const { updatedBedIds } = getRecalculatedDryingBeds(updatedProject, state.dryingBeds);
-            updatedProject.dryingBedIds = updatedBedIds;
-
-            return {
-                ...state,
-                paymentLines: newPaymentLines,
-                projects: state.projects.map(p => p.id === projectId ? updatedProject : p)
-            };
-        }
         case 'START_DRYING':
             return updateProjectInState(state, action.payload.projectId, p => {
                 if (p.dryingBatches.some(db => db.deliveryId === action.payload.deliveryId)) return p;
@@ -975,7 +886,7 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
                 if (!delivery) return p;
                 const endDate = new Date(action.payload.startDate);
                 endDate.setDate(endDate.getDate() + p.estDryingTimeDays);
-                return { ...p, dryingBatches: [...p.dryingBatches, { id: crypto.randomUUID(), deliveryId: delivery.id, startDate: action.payload.startDate, estimatedEndDate: endDate.toISOString().split('T')[0], initialCherryWeight: delivery.weight, moistureMeasurements: [] }]};
+                return { ...p, dryingBatches: [...p.dryingBatches, { id: crypto.randomUUID(), deliveryId: delivery.id, startDate: action.payload.startDate, estimatedEndDate: endDate.toISOString().split('T')[0], initialCherryWeight: delivery.weight, moistureMeasurements: [] }] };
             });
         case 'ADD_MOISTURE_MEASUREMENT':
             return updateProjectInState(state, action.payload.projectId, p => ({
@@ -1058,12 +969,12 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
 
                 // Process each item to handle splits if necessary
                 if (data.items) {
-                     data.items.forEach(item => {
+                    data.items.forEach(item => {
                         const batchIndex = newHulledBatches.findIndex(b => b.id === item.batchId);
                         if (batchIndex === -1) return;
 
                         const originalBatch = newHulledBatches[batchIndex];
-                        
+
                         // Scenario 1: Full Sale (All bags selected)
                         // Check if bagCount exists and matches, OR if it's bulk (no bags) assume full weight
                         const isFullSale = (originalBatch.bagCount && item.bags >= originalBatch.bagCount) || (!originalBatch.bagCount);
@@ -1075,7 +986,7 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
                             // Calculate proportional weight
                             const weightPerBag = originalBatch.bagWeightKg || (originalBatch.greenBeanWeight / (originalBatch.bagCount || 1));
                             const soldWeight = weightPerBag * item.bags;
-                            
+
                             // 1. Create "Sold" Batch (New ID)
                             const soldBatch: HulledBatch = {
                                 ...originalBatch,
@@ -1084,11 +995,11 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
                                 greenBeanWeight: soldWeight,
                                 // Inherit location or clear it? Usually sold items leave stock, but we keep record.
                             };
-                            
+
                             // 2. Update Original "Remaining" Batch
                             const remainingBags = (originalBatch.bagCount || 0) - item.bags;
                             const remainingWeight = originalBatch.greenBeanWeight - soldWeight;
-                            
+
                             newHulledBatches[batchIndex] = {
                                 ...originalBatch,
                                 bagCount: remainingBags,
@@ -1110,19 +1021,19 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
 
                 const priceUSD = data.currency === 'USD' ? data.pricePerKg : data.pricePerKg / p.exchangeRateUGXtoUSD;
 
-                return { 
-                    ...p, 
+                return {
+                    ...p,
                     hulledBatches: newHulledBatches,
                     sales: [
-                        ...p.sales, 
-                        { 
-                            ...data, 
-                            id: crypto.randomUUID(), 
+                        ...p.sales,
+                        {
+                            ...data,
+                            id: crypto.randomUUID(),
                             totalSaleAmountUSD: totalWeight * priceUSD,
                             hulledBatchIds: soldBatchIds,
                             items: undefined // Clean up temp field
                         }
-                    ] 
+                    ]
                 };
             });
         case 'TRANSFER_STOCK': {
@@ -1137,7 +1048,7 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
                 let totalCostAttributed = 0;
                 let totalWeightAttributed = 0;
                 traceability.forEach(entry => {
-                    const delivery = sourceProject.deliveries.find(d => d.farmerId === entry.farmerId); 
+                    const delivery = sourceProject.deliveries.find(d => d.farmerId === entry.farmerId);
                     if (delivery) {
                         const costPerKgCherry = delivery.costUSD / delivery.weight;
                         const cherryNeededForGreen = entry.weightContributedKg * sourceProject.estShrinkFactor;
@@ -1239,7 +1150,7 @@ const handleMaintenance = (state: ProjectState, action: ProjectAction): ProjectS
                 projects: state.projects.map(project => {
                     const projectUpdates = updates.filter(u => u.projectId === project.id);
                     if (projectUpdates.length === 0) return project;
-                    
+
                     let updatedProject = project;
                     for (const update of projectUpdates) {
                         updatedProject = applyDateUpdate(updatedProject, update.type, update.id, update.newDate);
