@@ -1,3 +1,4 @@
+// ==> src/types.ts <==
 export type Currency = 'USD' | 'UGX' | 'EUR';
 
 export type Permission =
@@ -205,7 +206,7 @@ export interface Container {
     weight: number; // Max 48kg
     contributions: { farmerId: string; deliveryId: string; weight: number }[];
     date: string;
-    status: 'OPEN' | 'CLOSED';
+    status: 'AVAILABLE' | 'IN_USE' | 'QUARANTINED';
 }
 
 export type ProcessingStage = 'RECEPTION' | 'FLOATING' | 'PULPING' | 'FERMENTATION' | 'DESICCATION' | 'RESTING' | 'DE_STONING' | 'HULLING' | 'POLISHING' | 'GRADING' | 'DENSITY' | 'COLOR_SORTING' | 'EXPORT_READY';
@@ -219,6 +220,7 @@ export interface ProcessingStepLog {
     completedBy?: string;
     approvedBy?: string;
     weightOut?: number;
+    floaterWeight?: number;
     isOutsourced?: boolean;
     outsourcedCost?: number;
 }
@@ -234,7 +236,6 @@ export interface ProcessingBatch {
     moistureLogs: MoistureMeasurement[];
     cuppingScore?: number;
     history: ProcessingStepLog[];
-
     // Logistics / Inventory
     warehouseLocation?: string;
     storageZone?: string;
@@ -408,8 +409,7 @@ export interface DryingBed {
     uniqueNumber: string;
     capacityKg: number;
     areaM2: number;
-    lifeMonths: number;
-    cost: number;
+    creationDate: string;
 }
 
 export interface StorageLocation {
@@ -418,7 +418,7 @@ export interface StorageLocation {
     facilityCode: string; // New: e.g., UGFP
     description: string;
     allowedZones: string[]; // Config for zones within facility
-    allowedRows: string[];  // Config for rows within facility
+    allowedRows: string[]; // Config for rows within facility
     allowedPallets: string[]; // Config for pallet positions
     allowedLevels: string[]; // Config for vertical levels (A, B, C)
 }
@@ -548,7 +548,7 @@ type AddFarmerAction = { type: 'ADD_FARMER'; payload: { farmerData: Omit<Farmer,
 type UpdateFarmerAction = { type: 'UPDATE_FARMER'; payload: { farmerId: string; updates: Partial<Omit<Farmer, 'id'>> } };
 type DeleteFarmerAction = { type: 'DELETE_FARMER'; payload: { farmerId: string } };
 type ImportGlobalFarmersAction = { type: 'IMPORT_GLOBAL_FARMERS'; payload: { farmersData: Partial<Farmer>[] } };
-type AddBulkFarmersAction = { type: 'ADD_BULK_FARMERS'; payload: { projectId: string; farmers: Partial<Farmer>[] } }; // Legacy, mapped to global import + assign
+type AddBulkFarmersAction = { type: 'ADD_BULK_FARMERS'; payload: { projectId: string; farmers: Partial<Farmer>[] } };
 
 // User Management Actions
 type AddUserAction = { type: 'ADD_USER'; payload: { userData: Omit<User, 'id'> } };
@@ -569,13 +569,39 @@ type AddBulkDeliveriesAction = { type: 'ADD_BULK_DELIVERIES'; payload: { project
 // NEW PROCESSING ACTIONS
 type AddContainerAction = { type: 'ADD_CONTAINER'; payload: { data: Omit<Container, 'id'> } };
 type UpdateContainerAction = { type: 'UPDATE_CONTAINER'; payload: { containerId: string; updates: Partial<Container> } };
-type LoadDryingBedAction = { type: 'LOAD_DRYING_BED'; payload: { projectId: string; containerIds: string[]; dryingBedId: string; startDate: string } };
-type CompleteProcessingStepAction = { type: 'COMPLETE_PROCESSING_STEP'; payload: { projectId: string; batchId: string; stage: ProcessingStage; weightOut?: number; endDate: string; isOutsourced?: boolean; outsourcedCost?: number; completedBy: string } };
+type AssignContainersAction = { type: 'ASSIGN_CONTAINERS'; payload: { projectId: string; deliveryId: string; containerIds: string[] } };
+type InitializeBatchAction = { type: 'INITIALIZE_BATCH'; payload: { projectId: string; containerIds: string[]; initialStage: ProcessingStage; dryingBedId?: string; startDate: string } };
+type CompleteProcessingStepAction = { type: 'COMPLETE_PROCESSING_STEP'; payload: { projectId: string; batchId: string; stage: ProcessingStage; weightOut?: number; endDate: string; isOutsourced?: boolean; outsourcedCost?: number; completedBy: string; newBedId?: string } };
 type ApproveProcessingStepAction = { type: 'APPROVE_PROCESSING_STEP'; payload: { projectId: string; batchId: string; approvedBy: string } };
 type ApproveContainerLoadingAction = { type: 'APPROVE_CONTAINER_LOADING'; payload: { projectId: string; batchId: string; officialStartDate: string; approvedBy: string } };
 type SetOutsourcedCostAction = { type: 'SET_OUTSOURCED_COST'; payload: { projectId: string; batchId: string; stage: ProcessingStage; cost: number } };
 type AddBatchMoistureMeasurementAction = { type: 'ADD_BATCH_MOISTURE_MEASUREMENT'; payload: { projectId: string; batchId: string; data: Omit<MoistureMeasurement, 'id'> } };
 type UpdateBatchCuppingScoreAction = { type: 'UPDATE_BATCH_CUPPING_SCORE'; payload: { projectId: string; batchId: string; score: number } };
+
+type CompleteFloatingAction = {
+    type: 'COMPLETE_FLOATING';
+    payload: {
+        projectId: string;
+        batchId: string;
+        sinkerWeight: number;
+        floaterWeight: number;
+        sinkerContainerIds: string[];
+        floaterContainerIds: string[];
+        completedBy: string;
+        endDate: string;
+    }
+};
+
+type MergeBatchesAction = {
+    type: 'MERGE_BATCHES';
+    payload: {
+        projectId: string;
+        sourceBatchIds: string[];
+        newContainerIds: string[];
+        startDate: string;
+        completedBy: string;
+    }
+};
 
 // NEW PRICING & PAYMENT ACTIONS
 type PublishBuyingPricesAction = { type: 'PUBLISH_BUYING_PRICES'; payload: { data: Omit<BuyingPrices, 'id'>; id?: string } };
@@ -614,6 +640,7 @@ type CompleteHullingAction = {
         mergeRemainderBatchIds?: string[];
     }
 };
+
 type MoveBatchStockAction = {
     type: 'MOVE_BATCH_STOCK';
     payload: {
@@ -638,6 +665,7 @@ type AddSaleAction = {
         }
     }
 };
+
 type TransferStockAction = { type: 'TRANSFER_STOCK'; payload: { sourceProjectId: string; targetProjectId: string; batchId: string; weight: number; date: string } };
 type UpdateEntryDateAction = { type: 'UPDATE_ENTRY_DATE', payload: { projectId: string, type: ActivityLogEntryType, id: string, newDate: string } };
 type BulkUpdateEntryDatesAction = { type: 'BULK_UPDATE_ENTRY_DATES', payload: { updates: { projectId: string; type: ActivityLogEntryType; id: string; newDate: string }[] } };
@@ -647,7 +675,6 @@ type DeleteForecastSnapshotAction = { type: 'DELETE_FORECAST_SNAPSHOT'; payload:
 type UpdateGlobalCurrencyAction = { type: 'UPDATE_GLOBAL_CURRENCY'; payload: { currency: Currency } };
 
 export type ProjectAction =
-
     | AddProjectAction
     | DeleteProjectAction
     | UpdateProjectAction
@@ -691,13 +718,16 @@ export type ProjectAction =
     | AddBulkDeliveriesAction
     | AddContainerAction
     | UpdateContainerAction
-    | LoadDryingBedAction
+    | AssignContainersAction
+    | InitializeBatchAction
     | CompleteProcessingStepAction
     | ApproveProcessingStepAction
     | ApproveContainerLoadingAction
     | SetOutsourcedCostAction
     | AddBatchMoistureMeasurementAction
     | UpdateBatchCuppingScoreAction
+    | CompleteFloatingAction
+    | MergeBatchesAction
     | PublishBuyingPricesAction
     | AddPaymentLineAction
     | UpdatePaymentLineStatusAction

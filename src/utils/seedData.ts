@@ -20,14 +20,10 @@ export const seedDummyData = (dispatch: React.Dispatch<ProjectAction>) => {
     const bed2Id = generateId();
 
     console.log("Creating project, farmers, and beds...");
-    dispatch({ type: 'ADD_PROJECT', payload: { id: projectId, name: "Washed Arabica 2026", tier: "TARGET_SPECIALTY" } });
-    
-    dispatch({ type: 'ADD_FARMER', payload: { id: farmer1Id, farmerData: { name: "John Okello", bankName: "Stanbic", bankAccountNumber: "9030001234567", phoneNumber: "+256 772 123456", district: "Kasese" } } });
-    dispatch({ type: 'ADD_FARMER', payload: { id: farmer2Id, farmerData: { name: "Sarah Namono", bankName: "Centenary", bankAccountNumber: "3100012345", phoneNumber: "+256 701 654321", district: "Mbale" } } });
     dispatch({ type: 'ADD_FARMER', payload: { id: farmer3Id, farmerData: { name: "David Musoke", airtelMoneyNumber: "0752123456", phoneNumber: "+256 752 123456", district: "Mubende" } } });
 
-    dispatch({ type: 'ADD_DRYING_BED', payload: { id: bed1Id, bedData: { uniqueNumber: "BED-01", capacityKg: 500, areaM2: 20, lifeMonths: 24, cost: 150000 } } });
-    dispatch({ type: 'ADD_DRYING_BED', payload: { id: bed2Id, bedData: { uniqueNumber: "BED-02", capacityKg: 500, areaM2: 20, lifeMonths: 24, cost: 150000 } } });
+    dispatch({ type: 'ADD_DRYING_BED', payload: { id: bed1Id, bedData: { uniqueNumber: "10-2026-PETER", capacityKg: 500, areaM2: 20, creationDate: "2026-03-08" } } });
+    dispatch({ type: 'ADD_DRYING_BED', payload: { id: bed2Id, bedData: { uniqueNumber: "10-2026-SARAH", capacityKg: 500, areaM2: 20, creationDate: "2026-03-08" } } });
 
     // Link farmers and beds to project
     dispatch({ type: 'UPDATE_PROJECT', payload: { projectId, updates: { farmerIds: [farmer1Id, farmer2Id, farmer3Id], dryingBedIds: [bed1Id, bed2Id], exchangeRateUGXtoUSD: 3800 } } });
@@ -35,9 +31,9 @@ export const seedDummyData = (dispatch: React.Dispatch<ProjectAction>) => {
     // 2. Pricing: Dispatch a Director action to set active BuyingPrices
     console.log("Publishing buying prices...");
     const pricesId = generateId();
-    dispatch({ 
-        type: 'PUBLISH_BUYING_PRICES', 
-        payload: { 
+    dispatch({
+        type: 'PUBLISH_BUYING_PRICES',
+        payload: {
             id: pricesId,
             data: {
                 validFrom: "2026-01-01",
@@ -61,78 +57,78 @@ export const seedDummyData = (dispatch: React.Dispatch<ProjectAction>) => {
     const container4Id = generateId();
     const container5Id = generateId();
 
-    dispatch({ 
-        type: 'RECEPTION_DELIVERY', 
-        payload: { 
-            projectId, 
-            farmerId: farmer1Id, 
-            date, 
-            weight: 48, 
-            unripe: 5, 
-            earlyRipe: 5, 
-            optimal: 85, 
+    dispatch({
+        type: 'RECEPTION_DELIVERY',
+        payload: {
+            projectId,
+            farmerId: farmer1Id,
+            date,
+            weight: 48,
+            unripe: 5,
+            earlyRipe: 5,
+            optimal: 85,
             overRipe: 5,
             paymentLineId: paymentLine1Id,
             newContainerId: container1Id
         }
     });
 
-    dispatch({ 
-        type: 'RECEPTION_DELIVERY', 
-        payload: { 
-            projectId, 
-            farmerId: farmer2Id, 
-            date, 
-            weight: 48, 
-            unripe: 2, 
-            earlyRipe: 8, 
-            optimal: 85, 
+    dispatch({
+        type: 'RECEPTION_DELIVERY',
+        payload: {
+            projectId,
+            farmerId: farmer2Id,
+            date,
+            weight: 48,
+            unripe: 2,
+            earlyRipe: 8,
+            optimal: 85,
             overRipe: 5,
             newContainerId: container2Id
         }
     });
 
-    dispatch({ 
-        type: 'RECEPTION_DELIVERY', 
-        payload: { 
-            projectId, 
-            farmerId: farmer3Id, 
-            date, 
-            weight: 48, 
-            unripe: 10, 
-            earlyRipe: 10, 
-            optimal: 70, 
+    dispatch({
+        type: 'RECEPTION_DELIVERY',
+        payload: {
+            projectId,
+            farmerId: farmer3Id,
+            date,
+            weight: 48,
+            unripe: 10,
+            earlyRipe: 10,
+            optimal: 70,
             overRipe: 10,
             newContainerId: container3Id
         }
     });
 
     // Add 2 more containers to have 5 for bed loading
-    dispatch({ 
-        type: 'RECEPTION_DELIVERY', 
-        payload: { 
-            projectId, 
-            farmerId: farmer1Id, 
-            date, 
-            weight: 48, 
-            unripe: 0, 
-            earlyRipe: 0, 
-            optimal: 100, 
+    dispatch({
+        type: 'RECEPTION_DELIVERY',
+        payload: {
+            projectId,
+            farmerId: farmer1Id,
+            date,
+            weight: 48,
+            unripe: 0,
+            earlyRipe: 0,
+            optimal: 100,
             overRipe: 0,
             newContainerId: container4Id
         }
     });
 
-    dispatch({ 
-        type: 'RECEPTION_DELIVERY', 
-        payload: { 
-            projectId, 
-            farmerId: farmer2Id, 
-            date, 
-            weight: 48, 
-            unripe: 0, 
-            earlyRipe: 0, 
-            optimal: 100, 
+    dispatch({
+        type: 'RECEPTION_DELIVERY',
+        payload: {
+            projectId,
+            farmerId: farmer2Id,
+            date,
+            weight: 48,
+            unripe: 0,
+            earlyRipe: 0,
+            optimal: 100,
             overRipe: 0,
             newContainerId: container5Id
         }
@@ -146,14 +142,14 @@ export const seedDummyData = (dispatch: React.Dispatch<ProjectAction>) => {
     // 6. Bed Loading: Load exactly 5 containers onto one of the Drying Beds
     console.log("Loading drying bed...");
     const containerIds = [container1Id, container2Id, container3Id, container4Id, container5Id];
-    dispatch({ 
-        type: 'LOAD_DRYING_BED', 
-        payload: { 
-            projectId, 
-            containerIds, 
-            dryingBedId: bed1Id, 
-            startDate: date 
-        } 
+    dispatch({
+        type: 'LOAD_DRYING_BED',
+        payload: {
+            projectId,
+            containerIds,
+            dryingBedId: bed1Id,
+            startDate: date
+        }
     });
 
     // 7. State Machine: Transition from DRYING -> RESTING
@@ -163,25 +159,25 @@ export const seedDummyData = (dispatch: React.Dispatch<ProjectAction>) => {
     // For 2026-03-08 (Sunday), dayOfWeek is 7. Week is 10. Year is 26. Bed is BED-01.
     const batchId = `7-wk1026-BED-01`;
 
-    dispatch({ 
-        type: 'COMPLETE_PROCESSING_STEP', 
-        payload: { 
-            projectId, 
-            batchId, 
-            stage: 'DESICCATION' as ProcessingStage, 
+    dispatch({
+        type: 'COMPLETE_PROCESSING_STEP',
+        payload: {
+            projectId,
+            batchId,
+            stage: 'DESICCATION' as ProcessingStage,
             weightOut: 220, // Mock shrinkage
-            endDate: date, 
-            completedBy: "Admin" 
-        } 
+            endDate: date,
+            completedBy: "Admin"
+        }
     });
 
-    dispatch({ 
-        type: 'APPROVE_PROCESSING_STEP', 
-        payload: { 
-            projectId, 
-            batchId, 
-            approvedBy: "Director" 
-        } 
+    dispatch({
+        type: 'APPROVE_PROCESSING_STEP',
+        payload: {
+            projectId,
+            batchId,
+            approvedBy: "Director"
+        }
     });
 
     console.log("Seeding complete!");

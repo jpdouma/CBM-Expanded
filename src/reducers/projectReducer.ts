@@ -1,5 +1,6 @@
+// ==> src/reducers/projectReducer.ts <==
 import type { ProjectState, ProjectAction, Project, Delivery, DryingBed, ClientDetails, Financier, Sale, ActivityLogEntryType, StorageLocation, Farmer, User, ProcessingBatch, ProcessingStage, PaymentLine, StoredBatch, HulledBatch, Container } from '../types';
-import { dayDiff } from '../utils/formatters';
+import { dayDiff, getWeek } from '../utils/formatters';
 import { defaultClientDetails, createNewProject, getRecalculatedDryingBeds } from '../utils/projectHelpers';
 import { processImportedData } from '../utils/migrations';
 import { getBatchProvenance } from '../utils/traceability';
@@ -20,7 +21,6 @@ const updateProjectInState = (state: ProjectState, projectId: string, updateFn: 
 const handleProjectManagement = (state: ProjectState, action: any): ProjectState => {
     switch (action.type) {
         case 'LOAD_STATE': {
-            // Replace entire state with payload from Firebase
             const payload = action.payload || {};
             return {
                 ...state,
@@ -48,7 +48,7 @@ const handleProjectManagement = (state: ProjectState, action: any): ProjectState
                 farmers: payload.farmers || state.farmers || [],
                 users: payload.users || state.users || [],
                 roles: payload.roles?.length ? payload.roles : state.roles,
-                globalSettings: payload.globalSettings || state.globalSettings || { processingCosts: [] },
+                globalSettings: payload.globalSettings || { processingCosts: [] },
                 buyingPrices: payload.buyingPrices || state.buyingPrices || [],
                 paymentLines: payload.paymentLines || state.paymentLines || [],
                 containers: payload.containers || state.containers || [],
@@ -113,6 +113,7 @@ const handleProjectManagement = (state: ProjectState, action: any): ProjectState
                 action.payload.storageLocations,
                 action.payload.farmers
             );
+
             const projects = (processedData.projects || []).map((p: any) => ({
                 ...p,
                 processingBatches: p.processingBatches || [],
@@ -128,6 +129,7 @@ const handleProjectManagement = (state: ProjectState, action: any): ProjectState
                 farmerIds: p.farmerIds || [],
                 preProjectChecklist: p.preProjectChecklist || { contractSigned: false, accountCardSubmitted: false, projectSetupComplete: false, forecastGenerated: false, firstWithdrawalReceived: false, projectStarted: false }
             }));
+
             return {
                 ...state,
                 ...processedData,
@@ -228,7 +230,6 @@ const handleSettings = (state: ProjectState, action: ProjectAction): ProjectStat
             const year = d.getFullYear().toString();
             const prefix = `${month}${year}`;
 
-            // Find existing containers for this month to get starting counter
             const existingForMonth = state.containers.filter(c => c.label.startsWith(prefix));
             let counter = 0;
             if (existingForMonth.length > 0) {
@@ -248,14 +249,13 @@ const handleSettings = (state: ProjectState, action: ProjectAction): ProjectStat
                     weight: 0,
                     contributions: [],
                     date: date,
-                    status: 'OPEN' as const
+                    status: 'AVAILABLE' as const
                 });
             }
             return { ...state, containers: [...state.containers, ...newContainers] };
         }
         case 'DELETE_CONTAINER': {
             const { containerId } = action.payload;
-            // Check if container is in use in any processing batch
             const isInUse = state.projects.some(p => p.processingBatches.some(b => b.containerIds.includes(containerId)));
             if (isInUse) {
                 alert("Cannot delete: Container is currently assigned to a processing batch.");
@@ -295,10 +295,12 @@ const handleSettings = (state: ProjectState, action: ProjectAction): ProjectStat
             const { projectId, farmers } = action.payload;
             const newGlobalFarmers: Farmer[] = [];
             const existingNames = new Set(state.farmers.map(f => f.name.toLowerCase()));
+
             farmers.filter(f => f.name && !existingNames.has(f.name.toLowerCase())).forEach(f => {
                 newGlobalFarmers.push({ ...f, name: f.name!, id: crypto.randomUUID() });
                 existingNames.add(f.name!.toLowerCase());
             });
+
             const newState = { ...state, farmers: [...state.farmers, ...newGlobalFarmers] };
             return updateProjectInState(newState, projectId, p => {
                 const ids = new Set(p.farmerIds);
@@ -334,10 +336,10 @@ const handleSettings = (state: ProjectState, action: ProjectAction): ProjectStat
                 name: newName,
                 isSystem: false
             };
+
             return { ...state, roles: [...state.roles, clonedRole] };
         }
         case 'DELETE_ROLE':
-            // Check if role is assigned to any user
             if (state.users.some(u => u.roleId === action.payload.roleId)) {
                 alert("Cannot delete role: It is currently assigned to one or more users.");
                 return state;
@@ -363,7 +365,6 @@ const handleFinance = (state: ProjectState, action: any): ProjectState => {
                     : c)
             }));
         case 'REMOVE_PROJECT_SETUP_COST':
-            // FIX: Use action.payload.projectId and action.payload.costId
             return updateProjectInState(state, action.payload.projectId, p => ({
                 ...p,
                 setupCosts: p.setupCosts.filter(c => c.id !== action.payload.costId)
@@ -479,7 +480,8 @@ const handleFinance = (state: ProjectState, action: any): ProjectState => {
                 )
             };
         case 'RECEPTION_DELIVERY': {
-            const { projectId, farmerId, date, weight, unripe, earlyRipe, optimal, overRipe, containerId } = action.payload;
+            // Simplified to ONLY handle the commercial transaction (no auto-chunking to containers here)
+            const { projectId, farmerId, date, weight, unripe, earlyRipe, optimal, overRipe } = action.payload;
             const project = state.projects.find(p => p.id === projectId);
             if (!project) return state;
 
@@ -490,122 +492,34 @@ const handleFinance = (state: ProjectState, action: any): ProjectState => {
                 return today >= start && today <= end;
             });
 
-            if (!activePrices) {
-                alert("No active buying prices found for this date.");
-                return state;
-            }
+            if (!activePrices) return state;
 
-            const w = weight;
-            const u = unripe / 100;
-            const e = earlyRipe / 100;
-            const o = optimal / 100;
-            const ov = overRipe / 100;
+            const payout = (weight * (unripe / 100) * activePrices.unripe) +
+                (weight * (earlyRipe / 100) * activePrices.earlyRipe) +
+                (weight * (optimal / 100) * activePrices.optimal) +
+                (weight * (overRipe / 100) * activePrices.overRipe);
 
-            const payout = (w * u * activePrices.unripe) +
-                (w * e * activePrices.earlyRipe) +
-                (w * o * activePrices.optimal) +
-                (w * ov * activePrices.overRipe);
-
-            const deliveryId = action.payload.deliveryId || crypto.randomUUID();
+            const deliveryId = crypto.randomUUID();
             const costUSD = activePrices.currency === 'USD' ? payout : payout / project.exchangeRateUGXtoUSD;
+
             const farmerAdvances = project.advances.filter(a => a.farmerId === farmerId).reduce((s, a) => s + a.amountUSD, 0);
             const priorOffsets = project.deliveries.filter(d => d.farmerId === farmerId).reduce((s, d) => s + d.advanceOffsetUSD, 0);
+
             const advanceOffsetUSD = Math.min(farmerAdvances - priorOffsets, costUSD);
             const amountPaidUSD = costUSD - advanceOffsetUSD;
 
             const delivery: Delivery = {
-                id: deliveryId,
-                farmerId,
-                date,
-                weight: w,
-                unripePercentage: unripe,
-                earlyRipePercentage: earlyRipe,
-                optimalPercentage: optimal,
-                overRipePercentage: overRipe,
-                cost: payout,
-                currency: activePrices.currency,
-                costUSD,
-                advanceOffsetUSD,
-                amountPaidUSD
+                id: deliveryId, farmerId, date, weight, unripePercentage: unripe, earlyRipePercentage: earlyRipe, optimalPercentage: optimal, overRipePercentage: overRipe, cost: payout, currency: activePrices.currency, costUSD, advanceOffsetUSD, amountPaidUSD
             };
-
-            // Handle Container Logic
-            let updatedContainers = [...(state.containers || [])];
-            let remainingWeight = w;
-            const MAX_CAPACITY = 48;
-
-            // 1. If a specific container was selected, try to fill it first
-            if (containerId && containerId !== 'new') {
-                const cIdx = updatedContainers.findIndex(c => c.id === containerId);
-                if (cIdx !== -1 && updatedContainers[cIdx].status === 'OPEN') {
-                    const currentWeight = updatedContainers[cIdx].weight || 0;
-                    const availableSpace = Math.max(0, MAX_CAPACITY - currentWeight);
-                    const weightToAdd = Math.min(remainingWeight, availableSpace);
-
-                    if (weightToAdd > 0) {
-                        updatedContainers[cIdx] = {
-                            ...updatedContainers[cIdx],
-                            weight: currentWeight + weightToAdd,
-                            contributions: [...(updatedContainers[cIdx].contributions || []), { farmerId, deliveryId, weight: weightToAdd }],
-                            status: (currentWeight + weightToAdd) >= MAX_CAPACITY ? 'CLOSED' : 'OPEN'
-                        };
-                        remainingWeight -= weightToAdd;
-                    }
-                }
-            }
-
-            // 2. Fill other open containers if weight remains
-            while (remainingWeight > 0) {
-                const openContainerIdx = updatedContainers.findIndex(c => c.status === 'OPEN' && (c.weight || 0) < MAX_CAPACITY);
-
-                if (openContainerIdx !== -1) {
-                    const c = updatedContainers[openContainerIdx];
-                    const availableSpace = MAX_CAPACITY - (c.weight || 0);
-                    const weightToAdd = Math.min(remainingWeight, availableSpace);
-
-                    updatedContainers[openContainerIdx] = {
-                        ...c,
-                        weight: (c.weight || 0) + weightToAdd,
-                        contributions: [...(c.contributions || []), { farmerId, deliveryId, weight: weightToAdd }],
-                        status: ((c.weight || 0) + weightToAdd) >= MAX_CAPACITY ? 'CLOSED' : 'OPEN'
-                    };
-                    remainingWeight -= weightToAdd;
-                } else {
-                    // 3. Create new container if no open ones left
-                    const weightToAdd = Math.min(remainingWeight, MAX_CAPACITY);
-                    const newC: Container = {
-                        id: crypto.randomUUID(),
-                        label: `CONT-${new Date().getTime()}-${Math.floor(Math.random() * 1000)}`,
-                        status: weightToAdd >= MAX_CAPACITY ? 'CLOSED' : 'OPEN',
-                        weight: weightToAdd,
-                        contributions: [{ farmerId, deliveryId, weight: weightToAdd }],
-                        date: date
-                    };
-                    updatedContainers.push(newC);
-                    remainingWeight -= weightToAdd;
-                }
-            }
 
             const paymentLine: PaymentLine = {
-                id: action.payload.paymentLineId || crypto.randomUUID(),
-                deliveryId,
-                farmerId,
-                amount: payout,
-                currency: activePrices.currency,
-                status: 'PENDING_ACCOUNTANT',
-                date
-            };
-
-            const updatedProject = {
-                ...project,
-                deliveries: [...project.deliveries, delivery]
+                id: crypto.randomUUID(), deliveryId, farmerId, amount: payout, currency: activePrices.currency, status: 'PENDING_ACCOUNTANT', date
             };
 
             return {
                 ...state,
-                containers: updatedContainers,
                 paymentLines: [...(state.paymentLines || []), paymentLine],
-                projects: state.projects.map(p => p.id === projectId ? updatedProject : p)
+                projects: state.projects.map(p => p.id === projectId ? { ...p, deliveries: [...p.deliveries, delivery] } : p)
             };
         }
         case 'APPROVE_PAYMENT_ACCOUNTANT': {
@@ -664,61 +578,340 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
                     c.id === action.payload.containerId ? { ...c, ...action.payload.updates } : c
                 )
             };
-        case 'LOAD_DRYING_BED':
-            return updateProjectInState(state, action.payload.projectId, p => {
-                const { containerIds, dryingBedId, startDate } = action.payload;
-                if (containerIds.length !== 5) {
-                    alert("Exactly 5 containers (240kg) are required to load a drying bed.");
-                    return p;
+        case 'ASSIGN_CONTAINERS': {
+            const { deliveryId, containerIds } = action.payload;
+            const project = state.projects.find(p => p.id === action.payload.projectId);
+            const delivery = project?.deliveries.find(d => d.id === deliveryId);
+            if (!delivery) return state;
+
+            let updatedContainers = [...(state.containers || [])];
+
+            // Calculate how much of this delivery is already assigned
+            const alreadyAssigned = updatedContainers.flatMap(c => c.contributions).filter(c => c.deliveryId === deliveryId).reduce((sum, c) => sum + c.weight, 0);
+            let remainingToAssign = delivery.weight - alreadyAssigned;
+
+            // Fill the selected containers up to 48kg
+            containerIds.forEach((cid: string) => {
+                const cIndex = updatedContainers.findIndex(c => c.id === cid);
+                if (cIndex > -1 && remainingToAssign > 0) {
+                    const container = updatedContainers[cIndex];
+                    const space = 48 - (container.weight || 0);
+                    if (space > 0) {
+                        const toAdd = Math.min(space, remainingToAssign);
+                        updatedContainers[cIndex] = {
+                            ...container,
+                            weight: (container.weight || 0) + toAdd,
+                            contributions: [...(container.contributions || []), { farmerId: delivery.farmerId, deliveryId: delivery.id, weight: toAdd }],
+                            status: 'IN_USE'
+                        };
+                        remainingToAssign -= toAdd;
+                    }
                 }
-                const containers = (state.containers || []).filter(c => containerIds.includes(c.id));
-                const totalWeight = containers.reduce((sum, c) => sum + c.weight, 0);
-
-                const d = new Date(startDate);
-                const dayOfWeek = d.getDay() === 0 ? 7 : d.getDay();
-
-                const target = new Date(d.valueOf());
-                const dayNr = (d.getDay() + 6) % 7;
-                target.setDate(target.getDate() - dayNr + 3);
-                const firstThursday = target.valueOf();
-                target.setMonth(0, 1);
-                if (target.getDay() !== 4) {
-                    target.setMonth(0, 1 + ((4 - target.getDay()) + 7) % 7);
-                }
-                const weekNum = 1 + Math.ceil((firstThursday - target.valueOf()) / 604800000);
-
-                const weekStr = weekNum.toString().padStart(2, '0');
-                const year = d.getFullYear().toString().slice(-2);
-
-                const bed = state.dryingBeds.find(b => b.id === dryingBedId);
-                const bedName = bed ? bed.uniqueNumber : 'UnknownBed';
-
-                const batchId = `${dayOfWeek}-wk${weekStr}${year}-${bedName}`;
-
-                const newBatch: ProcessingBatch = {
-                    id: batchId,
-                    projectId: p.id,
-                    containerIds,
-                    dryingBedId,
-                    currentStage: 'DESICCATION',
-                    status: 'PENDING_APPROVAL',
-                    weight: totalWeight,
-                    moistureLogs: [],
-                    history: [{
-                        stage: 'DESICCATION',
-                        startDate,
-                    }]
-                };
-
-                return {
-                    ...p,
-                    processingBatches: [...(p.processingBatches || []), newBatch]
-                };
             });
+
+            return { ...state, containers: updatedContainers };
+        }
+        case 'INITIALIZE_BATCH': {
+            const { projectId, containerIds, initialStage, dryingBedId, startDate } = action.payload;
+            const project = state.projects.find(p => p.id === projectId);
+            if (!project) return state;
+
+            if (containerIds.length !== 5) {
+                alert("Exactly 5 containers (240kg) are required to start a batch.");
+                return state;
+            }
+
+            const containersToLoad = (state.containers || []).filter(c => containerIds.includes(c.id));
+            const totalWeight = containersToLoad.reduce((sum, c) => sum + c.weight, 0);
+
+            // 1. Snapshot Traceability from the physical containers
+            const traceabilitySnapshot: { farmerId: string, weightKg: number }[] = [];
+            containersToLoad.forEach(c => {
+                c.contributions.forEach(contrib => {
+                    const existing = traceabilitySnapshot.find(t => t.farmerId === contrib.farmerId);
+                    if (existing) existing.weightKg += contrib.weight;
+                    else traceabilitySnapshot.push({ farmerId: contrib.farmerId, weightKg: contrib.weight });
+                });
+            });
+
+            // 2. WIPE the physical containers so they can be reused
+            const updatedContainers = (state.containers || []).map(c =>
+                containerIds.includes(c.id)
+                    ? { ...c, weight: 0, contributions: [], status: 'AVAILABLE' as const }
+                    : c
+            );
+
+            // 3. Create the processing batch
+            const d = new Date(startDate);
+            const dayOfWeek = d.getDay() === 0 ? 7 : d.getDay();
+            const weekNum = getWeek(d);
+            const weekStr = weekNum.toString().padStart(2, '0');
+            const year = d.getFullYear().toString().slice(-2);
+
+            let bedName = 'WET'; // Default fallback for Tier 1 which goes to floating basin first
+            if (dryingBedId) {
+                const bed = state.dryingBeds.find(b => b.id === dryingBedId);
+                if (bed) bedName = bed.uniqueNumber;
+            }
+
+            const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+
+            const newBatch: ProcessingBatch = {
+                id: `${dayOfWeek}-wk${weekStr}${year}-${bedName}-${randomSuffix}`,
+                projectId: project.id,
+                containerIds,
+                dryingBedId, // Could be undefined if Tier 1 starts at FLOATING
+                currentStage: initialStage,
+                status: 'IN_PROGRESS', // Unblocked: Operators can immediately begin logging results
+                weight: totalWeight,
+                moistureLogs: [],
+                traceabilitySnapshot, // Save the snapshot!
+                history: [{ stage: initialStage, startDate }]
+            };
+
+            const updatedProject = {
+                ...project,
+                processingBatches: [...(project.processingBatches || []), newBatch]
+            };
+
+            return {
+                ...state,
+                containers: updatedContainers,
+                projects: state.projects.map(p => p.id === projectId ? updatedProject : p)
+            };
+        }
+        case 'COMPLETE_FLOATING': {
+            const { projectId, batchId, sinkerWeight, floaterWeight, sinkerContainerIds, floaterContainerIds, completedBy, endDate } = action.payload;
+            const project = state.projects.find(p => p.id === projectId);
+            if (!project) return state;
+
+            const batch = (project.processingBatches || []).find(b => b.id === batchId);
+            if (!batch) return state;
+
+            const originalBatchWeight = batch.weight;
+            const sinkerRatio = originalBatchWeight > 0 ? sinkerWeight / originalBatchWeight : 0;
+            const floaterRatio = originalBatchWeight > 0 ? floaterWeight / originalBatchWeight : 0;
+
+            const originalSnapshot = batch.traceabilitySnapshot || [];
+
+            // Homogenous farmer ratios based on the original batch snapshot
+            const farmerRatios = originalBatchWeight > 0
+                ? originalSnapshot.map(s => ({ farmerId: s.farmerId, ratio: s.weightKg / originalBatchWeight }))
+                : [];
+
+            // Overwrite the batch's traceabilitySnapshot for the Sinkers
+            const newSinkerSnapshot = originalSnapshot.map(entry => ({
+                farmerId: entry.farmerId,
+                weightKg: entry.weightKg * sinkerRatio
+            }));
+
+            // 1. WIPE original basin crates BEFORE sequentially filling the newly selected crates.
+            let updatedContainers = (state.containers || []).map(c => {
+                if (batch.containerIds.includes(c.id)) {
+                    return { ...c, weight: 0, contributions: [], status: 'AVAILABLE' as const };
+                }
+                return c;
+            });
+
+            // Helper to sequentially fill crates to a max of 48kg using homogenous ratios
+            const fillContainersSequentially = (targetIds: string[], totalWeight: number, targetStatus: 'IN_USE' | 'QUARANTINED') => {
+                let remainingWeight = totalWeight;
+                targetIds.forEach(cid => {
+                    const cIndex = updatedContainers.findIndex(c => c.id === cid);
+                    if (cIndex > -1 && remainingWeight > 0) {
+                        const space = 48 - (updatedContainers[cIndex].weight || 0); // Safely handle partially filled crates
+                        const fillAmount = Math.min(space, remainingWeight);
+                        if (fillAmount > 0) {
+                            const containerContributions = farmerRatios.map(r => ({
+                                farmerId: r.farmerId,
+                                deliveryId: batchId, // Reference the batch as the source for downstream ops
+                                weight: r.ratio * fillAmount
+                            }));
+
+                            updatedContainers[cIndex] = {
+                                ...updatedContainers[cIndex],
+                                status: targetStatus,
+                                weight: (updatedContainers[cIndex].weight || 0) + fillAmount,
+                                contributions: [...(updatedContainers[cIndex].contributions || []), ...containerContributions]
+                            };
+                            remainingWeight -= fillAmount;
+                        }
+                    }
+                });
+            };
+
+            // 2. Fill Sinker Crates sequentially
+            fillContainersSequentially(sinkerContainerIds, sinkerWeight, 'IN_USE');
+
+            // 3. Fill Floater Crates sequentially
+            fillContainersSequentially(floaterContainerIds, floaterWeight, 'QUARANTINED');
+
+            const newHistory = [...batch.history];
+            const existingIndex = newHistory.findIndex(h => h.stage === 'FLOATING' && !h.endDate);
+            if (existingIndex !== -1) {
+                newHistory[existingIndex] = {
+                    ...newHistory[existingIndex],
+                    endDate,
+                    completedBy,
+                    weightOut: sinkerWeight,
+                    floaterWeight
+                };
+            } else {
+                newHistory.push({
+                    stage: 'FLOATING',
+                    startDate: endDate, // Assuming immediate completion if not started previously
+                    endDate,
+                    completedBy,
+                    weightOut: sinkerWeight,
+                    floaterWeight
+                });
+            }
+
+            // Auto-Advance Logic
+            const allStages: ProcessingStage[] = ['RECEPTION', 'FLOATING', 'PULPING', 'FERMENTATION', 'DESICCATION', 'RESTING', 'DE_STONING', 'HULLING', 'POLISHING', 'GRADING', 'DENSITY', 'COLOR_SORTING', 'EXPORT_READY'];
+            const isTier1 = project.tier === 'HIGH_COMMERCIAL';
+            const activeStages = isTier1 ? allStages : allStages.filter(s => !['FLOATING', 'PULPING', 'FERMENTATION'].includes(s));
+            const currentIndex = activeStages.indexOf('FLOATING');
+            const nextStage = currentIndex < activeStages.length - 1 ? activeStages[currentIndex + 1] : 'FLOATING';
+
+            newHistory.push({
+                stage: nextStage,
+                startDate: endDate
+            });
+
+            const updatedBatch = {
+                ...batch,
+                weight: sinkerWeight,
+                containerIds: sinkerContainerIds,
+                traceabilitySnapshot: newSinkerSnapshot,
+                history: newHistory,
+                status: 'IN_PROGRESS' as const,
+                currentStage: nextStage
+            };
+
+            const updatedProject = {
+                ...project,
+                processingBatches: project.processingBatches.map(b => b.id === batchId ? updatedBatch : b)
+            };
+
+            return {
+                ...state,
+                containers: updatedContainers,
+                projects: state.projects.map(p => p.id === projectId ? updatedProject : p)
+            };
+        }
+        case 'MERGE_BATCHES': {
+            const { projectId, sourceBatchIds, newContainerIds, startDate, completedBy } = action.payload;
+            const project = state.projects.find(p => p.id === projectId);
+            if (!project) return state;
+
+            const sourceBatches = project.processingBatches.filter(b => sourceBatchIds.includes(b.id));
+            if (sourceBatches.length === 0) return state;
+
+            const totalWeight = sourceBatches.reduce((sum, b) => sum + b.weight, 0);
+            const currentStage = sourceBatches[0].currentStage;
+
+            // Aggregate Traceability
+            const aggregatedSnapshot: { farmerId: string, weightKg: number }[] = [];
+            sourceBatches.forEach(b => {
+                (b.traceabilitySnapshot || []).forEach(snap => {
+                    const existing = aggregatedSnapshot.find(s => s.farmerId === snap.farmerId);
+                    if (existing) {
+                        existing.weightKg += snap.weightKg;
+                    } else {
+                        aggregatedSnapshot.push({ ...snap });
+                    }
+                });
+            });
+
+            // WIPE old crates
+            const allOldCrateIds = sourceBatches.flatMap(b => b.containerIds);
+            let updatedContainers = (state.containers || []).map(c => {
+                if (allOldCrateIds.includes(c.id)) {
+                    return { ...c, weight: 0, contributions: [], status: 'AVAILABLE' as const };
+                }
+                return c;
+            });
+
+            // Calculate ratios from aggregated snapshot
+            const farmerRatios = totalWeight > 0 ? aggregatedSnapshot.map(s => ({ farmerId: s.farmerId, ratio: s.weightKg / totalWeight })) : [];
+
+            // Generate New Batch ID
+            const d = new Date(startDate);
+            const dayOfWeek = d.getDay() === 0 ? 7 : d.getDay();
+            const weekNum = getWeek(d);
+            const weekStr = weekNum.toString().padStart(2, '0');
+            const year = d.getFullYear().toString().slice(-2);
+
+            let bedName = 'WET';
+            const firstDryingBedId = sourceBatches.find(b => b.dryingBedId)?.dryingBedId;
+            if (firstDryingBedId) {
+                const bed = state.dryingBeds.find(b => b.id === firstDryingBedId);
+                if (bed) bedName = bed.uniqueNumber;
+            }
+
+            const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+            const newBatchId = `${dayOfWeek}-wk${weekStr}${year}-${bedName}-${randomSuffix}`;
+
+            // Fill new crates sequentially
+            let remainingWeight = totalWeight;
+            newContainerIds.forEach(cid => {
+                const cIndex = updatedContainers.findIndex(c => c.id === cid);
+                if (cIndex > -1 && remainingWeight > 0) {
+                    const space = 48 - (updatedContainers[cIndex].weight || 0); // Should be 48 if wiped
+                    const fillAmount = Math.min(space, remainingWeight);
+                    if (fillAmount > 0) {
+                        const containerContributions = farmerRatios.map(r => ({
+                            farmerId: r.farmerId,
+                            deliveryId: newBatchId, // Reference the merged batch
+                            weight: r.ratio * fillAmount
+                        }));
+
+                        updatedContainers[cIndex] = {
+                            ...updatedContainers[cIndex],
+                            status: 'IN_USE',
+                            weight: (updatedContainers[cIndex].weight || 0) + fillAmount,
+                            contributions: [...(updatedContainers[cIndex].contributions || []), ...containerContributions]
+                        };
+                        remainingWeight -= fillAmount;
+                    }
+                }
+            });
+
+            // Construct new batch
+            const newBatch: ProcessingBatch = {
+                id: newBatchId,
+                projectId: project.id,
+                containerIds: newContainerIds,
+                dryingBedId: firstDryingBedId,
+                currentStage: currentStage,
+                status: 'PENDING_APPROVAL',
+                weight: totalWeight,
+                moistureLogs: [],
+                traceabilitySnapshot: aggregatedSnapshot,
+                history: [{ stage: currentStage, startDate, completedBy }]
+            };
+
+            // Retire source batches
+            const updatedBatches = project.processingBatches.map(b => {
+                if (sourceBatchIds.includes(b.id)) {
+                    return { ...b, status: 'COMPLETED' as const, consumedByBatchId: newBatchId };
+                }
+                return b;
+            });
+            updatedBatches.push(newBatch);
+
+            return {
+                ...state,
+                containers: updatedContainers,
+                projects: state.projects.map(p => p.id === projectId ? { ...p, processingBatches: updatedBatches } : p)
+            };
+        }
         case 'COMPLETE_PROCESSING_STEP': {
             const payload = action.payload as any;
-            const { projectId, batchId, weightOut, endDate, isOutsourced, outsourcedCost, completedBy } = payload;
+            const { projectId, batchId, weightOut, endDate, isOutsourced, outsourcedCost, completedBy, newBedId } = payload;
             const stages = payload.stages || [payload.stage];
+
             const project = state.projects.find(p => p.id === projectId);
             if (!project) return state;
 
@@ -752,10 +945,28 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
                 }
             });
 
+            // Auto-Advance Logic
+            const allStages: ProcessingStage[] = ['RECEPTION', 'FLOATING', 'PULPING', 'FERMENTATION', 'DESICCATION', 'RESTING', 'DE_STONING', 'HULLING', 'POLISHING', 'GRADING', 'DENSITY', 'COLOR_SORTING', 'EXPORT_READY'];
+            const isTier1 = project.tier === 'HIGH_COMMERCIAL';
+            const activeStages = isTier1 ? allStages : allStages.filter(s => !['FLOATING', 'PULPING', 'FERMENTATION'].includes(s));
+
+            const lastCompletedStage = stagesArray[stagesArray.length - 1];
+            const currentIndex = activeStages.indexOf(lastCompletedStage);
+            const nextStage = currentIndex < activeStages.length - 1 ? activeStages[currentIndex + 1] : lastCompletedStage;
+
+            if (nextStage !== lastCompletedStage) {
+                updatedHistory.push({
+                    stage: nextStage,
+                    startDate: endDate
+                });
+            }
+
             const updatedBatch = {
                 ...batch,
-                status: 'PENDING_APPROVAL' as const,
+                status: nextStage === 'EXPORT_READY' ? 'COMPLETED' as const : 'IN_PROGRESS' as const,
+                currentStage: nextStage,
                 weight: weightOut ?? batch.weight,
+                dryingBedId: newBedId || batch.dryingBedId,
                 history: updatedHistory
             };
 
@@ -802,11 +1013,14 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
                 updatedHistory[idx] = { ...step, approvedBy };
             });
 
-            const stagesList: ProcessingStage[] = ['RECEPTION', 'FLOATING', 'PULPING', 'FERMENTATION', 'DESICCATION', 'RESTING', 'DE_STONING', 'HULLING', 'POLISHING', 'GRADING', 'DENSITY', 'COLOR_SORTING', 'EXPORT_READY'];
+            // Tier-Aware Dynamic Routing
+            const allStages: ProcessingStage[] = ['RECEPTION', 'FLOATING', 'PULPING', 'FERMENTATION', 'DESICCATION', 'RESTING', 'DE_STONING', 'HULLING', 'POLISHING', 'GRADING', 'DENSITY', 'COLOR_SORTING', 'EXPORT_READY'];
+            const isTier1 = project.tier === 'HIGH_COMMERCIAL';
+            const activeStages = isTier1 ? allStages : allStages.filter(s => !['FLOATING', 'PULPING', 'FERMENTATION'].includes(s));
 
             const lastCompletedStage = updatedHistory.slice().reverse().find(h => h.endDate)?.stage || batch.currentStage;
-            const currentIndex = stagesList.indexOf(lastCompletedStage);
-            const nextStage = currentIndex < stagesList.length - 1 ? stagesList[currentIndex + 1] : lastCompletedStage;
+            const currentIndex = activeStages.indexOf(lastCompletedStage);
+            const nextStage = currentIndex < activeStages.length - 1 ? activeStages[currentIndex + 1] : lastCompletedStage;
 
             if (nextStage !== lastCompletedStage && !updatedHistory.some(h => h.stage === nextStage)) {
                 updatedHistory.push({
@@ -879,6 +1093,7 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
                         : b
                 )
             }));
+
         case 'START_DRYING':
             return updateProjectInState(state, action.payload.projectId, p => {
                 if (p.dryingBatches.some(db => db.deliveryId === action.payload.deliveryId)) return p;
@@ -920,10 +1135,12 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
                 const { storedBatchIds, greenBeanWeight, remainderWeight, hullingDate, warehouseLocation, storageZone, bagWeightKg, bagCount, cuppingScore2, remainderLocation, remainderStorageZone, remainderPalletId, mergeRemainderBatchIds } = action.payload;
                 const validSourceBatches = p.storedBatches.filter(sb => storedBatchIds.includes(sb.id));
                 if (validSourceBatches.length === 0) return p;
+
                 const primaryDeliveryId = validSourceBatches[0].deliveryId;
                 const totalCherry = validSourceBatches.reduce((sum, sb) => sum + sb.initialCherryWeight, 0);
                 const newBatches: HulledBatch[] = [];
                 const newMainId = crypto.randomUUID();
+
                 if (greenBeanWeight > 0) {
                     newBatches.push({
                         id: newMainId, storedBatchId: validSourceBatches[0].id, sourceBatchIds: storedBatchIds, deliveryId: primaryDeliveryId,
@@ -938,10 +1155,12 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
                         warehouseLocation: remainderLocation, storageZone: remainderStorageZone, palletId: remainderPalletId || 'REM', palletLevel: 'A', bagWeightKg: 0, bagCount: 0, isRemainder: true
                     });
                 }
+
                 let updatedHulled = [...p.hulledBatches];
                 if (mergeRemainderBatchIds?.length) {
                     updatedHulled = updatedHulled.map(hb => mergeRemainderBatchIds.includes(hb.id) ? { ...hb, consumedByBatchId: newMainId } : hb);
                 }
+
                 return { ...p, hulledBatches: [...updatedHulled, ...newBatches] };
             });
         case 'MOVE_BATCH_STOCK':
@@ -949,9 +1168,11 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
                 const { batchId, bagsToMove, locationData } = action.payload;
                 const idx = p.hulledBatches.findIndex(b => b.id === batchId);
                 if (idx === -1) return p;
+
                 const source = p.hulledBatches[idx];
                 if (!source.bagCount || bagsToMove <= 0 || bagsToMove > source.bagCount) return p;
                 const newBatches = [...p.hulledBatches];
+
                 if (bagsToMove === source.bagCount) {
                     newBatches[idx] = { ...source, ...locationData };
                 } else {
@@ -976,14 +1197,12 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
                         const originalBatch = newHulledBatches[batchIndex];
 
                         // Scenario 1: Full Sale (All bags selected)
-                        // Check if bagCount exists and matches, OR if it's bulk (no bags) assume full weight
                         const isFullSale = (originalBatch.bagCount && item.bags >= originalBatch.bagCount) || (!originalBatch.bagCount);
 
                         if (isFullSale) {
                             soldBatchIds.push(originalBatch.id);
                         } else {
                             // Scenario 2: Partial Sale (Split Required)
-                            // Calculate proportional weight
                             const weightPerBag = originalBatch.bagWeightKg || (originalBatch.greenBeanWeight / (originalBatch.bagCount || 1));
                             const soldWeight = weightPerBag * item.bags;
 
@@ -993,7 +1212,6 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
                                 id: crypto.randomUUID(),
                                 bagCount: item.bags,
                                 greenBeanWeight: soldWeight,
-                                // Inherit location or clear it? Usually sold items leave stock, but we keep record.
                             };
 
                             // 2. Update Original "Remaining" Batch
@@ -1040,6 +1258,7 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
             const { sourceProjectId, targetProjectId, batchId, weight, date } = action.payload;
             const sourceProject = state.projects.find(p => p.id === sourceProjectId);
             const sourceBatch = sourceProject?.hulledBatches.find(b => b.id === batchId);
+
             if (!sourceProject || !sourceBatch) return state;
 
             let unitCostUSD = sourceBatch.costBasisUSD || 0;
@@ -1058,6 +1277,7 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
                 });
                 const totalSetupCosts = sourceProject.setupCosts.reduce((s, c) => s + c.amountUSD, 0);
                 const setupCostPerKg = totalSetupCosts / (sourceProject.requiredGreenBeanMassKg || 1);
+
                 if (totalWeightAttributed > 0) {
                     unitCostUSD = (totalCostAttributed / totalWeightAttributed) + setupCostPerKg;
                 } else {
@@ -1177,18 +1397,23 @@ const handleMaintenance = (state: ProjectState, action: ProjectAction): ProjectS
 export const projectReducer = (state: ProjectState, action: AppProjectAction | any): ProjectState => {
     let newState = handleProjectManagement(state, action);
     if (newState !== state) return newState;
+
     newState = handleSettings(state, action);
     if (newState !== state) return newState;
+
     newState = handleFinance(state, action);
     if (newState !== state) return newState;
+
     newState = handleOperations(state, action);
     if (newState !== state) return newState;
+
     if (action.type === 'CLOSE_CONTAINER') {
         return {
             ...state,
-            containers: state.containers.map(c => c.id === action.payload.containerId ? { ...c, status: 'CLOSED' } : c)
+            containers: state.containers.map(c => c.id === action.payload.containerId ? { ...c, status: 'IN_USE' } : c)
         };
     }
+
     newState = handleMaintenance(state, action);
     return newState;
 };
