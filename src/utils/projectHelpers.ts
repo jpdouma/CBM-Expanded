@@ -1,3 +1,4 @@
+// ==> src/utils/projectHelpers.ts <==
 import type { Project, ClientDetails, DryingBed } from '../types';
 
 export const defaultClientDetails: Omit<ClientDetails, 'id'> = {
@@ -73,15 +74,15 @@ export const createNewProject = (name: string, tier: 'HIGH_COMMERCIAL' | 'TARGET
     dryingBedIds: [],
     targetMoisturePercentage: 11.5,
     // FIX: Initialize to 0 so the UI placeholder "Enter contracted mass..." can show
-    requiredGreenBeanMassKg: 0, 
+    requiredGreenBeanMassKg: 0,
     exchangeRateUGXtoUSD: 3750,
     targetSalePricePerKg: 0,
     targetSalePriceCurrency: 'USD',
     // Initialize cherry cost fields
     estCostPerKgCherry: 0,
     estCostPerKgCherryCurrency: 'USD',
-    estCostPerKgCherryUSD: 0, 
-    
+    estCostPerKgCherryUSD: 0,
+
     clientId: null,
     financierIds: [],
     preProjectChecklist: { contractSigned: false, accountCardSubmitted: false, projectSetupComplete: false, forecastGenerated: false, firstWithdrawalReceived: false, projectStarted: false },
@@ -90,6 +91,7 @@ export const createNewProject = (name: string, tier: 'HIGH_COMMERCIAL' | 'TARGET
     setupCosts: [],
     advances: [],
     deliveries: [],
+    processingPipeline: ['RECEPTION', 'FLOATING', 'DESICCATION', 'RESTING'], // NEW
     processingBatches: [], // NEW
     dryingBatches: [],
     storedBatches: [],
@@ -109,30 +111,28 @@ export const getRecalculatedDryingBeds = (project: Project, allDryingBeds: Dryin
     const totalRequiredCherryMass = project.requiredGreenBeanMassKg * project.estShrinkFactor;
     const totalDeliveredCherryMass = project.deliveries.reduce((sum, d) => sum + d.weight, 0);
     const remainingCherriesToBuy = Math.max(0, totalRequiredCherryMass - totalDeliveredCherryMass);
-
     const dryingBatchDeliveryIds = new Set(project.dryingBatches.map(db => db.deliveryId));
     const undriedCherryMass = project.deliveries
         .filter(d => !dryingBatchDeliveryIds.has(d.id))
         .reduce((sum, d) => sum + d.weight, 0);
-    
     const requiredFutureCapacity = remainingCherriesToBuy + undriedCherryMass;
 
     // 2. Greedy algorithm to find beds to keep
     const assignedBeds = project.dryingBedIds
         .map(id => allDryingBeds.find(b => b.id === id))
         .filter((b): b is DryingBed => !!b)
-        .sort((a, b) => b.capacityKg - a.capacityKg); // Sort descending by capacity
+        .sort((a, b) => b.capacityKg - a.capacityKg);
+    // Sort descending by capacity
 
     const bedsToKeep: DryingBed[] = [];
     let capacityMet = 0;
-
     for (const bed of assignedBeds) {
         if (capacityMet < requiredFutureCapacity) {
             bedsToKeep.push(bed);
             capacityMet += bed.capacityKg;
         }
     }
-    
+
     // 3. Determine released beds
     const keptBedIds = new Set(bedsToKeep.map(b => b.id));
     const releasedBeds = assignedBeds.filter(b => !keptBedIds.has(b.id));

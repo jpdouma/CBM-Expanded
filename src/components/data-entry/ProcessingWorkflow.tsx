@@ -32,7 +32,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Label } from '../../components/ui/label';
 import { Input } from '../../components/ui/input';
 import type { Project, ProcessingStage } from '../../types';
-import { formatDate } from '../../utils/formatters';
+import { formatDate, dayDiff } from '../../utils/formatters';
 
 interface ProcessingWorkflowProps {
     project: Project;
@@ -54,21 +54,8 @@ const STAGE_CONFIG: Record<ProcessingStage, { label: string; icon: any; color: s
     EXPORT_READY: { label: 'Export Ready', icon: Truck, color: 'green' },
 };
 
-const STAGE_ORDER: ProcessingStage[] = [
-    'RECEPTION',
-    'FLOATING',
-    'PULPING',
-    'FERMENTATION',
-    'DESICCATION',
-    'RESTING',
-    'DE_STONING',
-    'HULLING',
-    'POLISHING',
-    'GRADING',
-    'DENSITY',
-    'COLOR_SORTING',
-    'EXPORT_READY'
-];
+const INDUSTRY_PRIMARY_STAGES: ProcessingStage[] = ['RECEPTION', 'FLOATING', 'PULPING', 'FERMENTATION', 'DESICCATION', 'RESTING'];
+const INDUSTRY_SECONDARY_STAGES: ProcessingStage[] = ['DE_STONING', 'HULLING', 'POLISHING', 'GRADING', 'DENSITY', 'COLOR_SORTING', 'EXPORT_READY'];
 
 export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project }) => {
     const { state, dispatch } = useProjects();
@@ -80,41 +67,36 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
     const [selectedBedId, setSelectedBedId] = useState<string>('');
     const [inlineBedSelections, setInlineBedSelections] = useState<Record<string, string>>({});
 
-    // New states for the inline container assignment workflow (Reception)
     const [assigningDeliveryId, setAssigningDeliveryId] = useState<string | null>(null);
     const [assignmentSelectedCrates, setAssignmentSelectedCrates] = useState<string[]>([]);
 
-    // New states for the inline Floating Split panel
     const [floatingBatchId, setFloatingBatchId] = useState<string | null>(null);
     const [floatingSinkerWeight, setFloatingSinkerWeight] = useState('');
     const [floatingFloaterWeight, setFloatingFloaterWeight] = useState('');
     const [floatingSinkerCrates, setFloatingSinkerCrates] = useState<string[]>([]);
     const [floatingFloaterCrates, setFloatingFloaterCrates] = useState<string[]>([]);
 
-    // New states for the inline Merge Batches panel
     const [isMerging, setIsMerging] = useState(false);
     const [mergeSelectedCrates, setMergeSelectedCrates] = useState<string[]>([]);
 
-    // New state for inline moisture logging
     const [moistureInputs, setMoistureInputs] = useState<Record<string, string>>({});
+    const [moistureDates, setMoistureDates] = useState<Record<string, string>>({});
+    const [harvestingBatchId, setHarvestingBatchId] = useState<string | null>(null);
+    const [harvestWeight, setHarvestWeight] = useState('');
 
-    // Tier Routing Logic: Skip specific wet stages for Tier 2 and Tier 3
     const activeStageOrder = useMemo(() => {
-        if (project.tier === 'TARGET_SPECIALTY' || project.tier === 'MICRO_LOTS') {
-            return STAGE_ORDER.filter(s => !['FLOATING', 'PULPING', 'FERMENTATION'].includes(s));
-        }
-        return STAGE_ORDER;
-    }, [project.tier]);
-
-    const isTier1 = project.tier === 'HIGH_COMMERCIAL';
+        return project.processingPipeline && project.processingPipeline.length > 0
+            ? project.processingPipeline
+            : ['RECEPTION', 'FLOATING', 'DESICCATION', 'RESTING'];
+    }, [project.processingPipeline]);
 
     const primaryStages = useMemo(() =>
-        activeStageOrder.filter(s => ['RECEPTION', 'FLOATING', 'PULPING', 'FERMENTATION', 'DESICCATION', 'RESTING'].includes(s)),
+        activeStageOrder.filter(s => INDUSTRY_PRIMARY_STAGES.includes(s)),
         [activeStageOrder]);
 
     const secondaryStages = useMemo(() =>
-        activeStageOrder.filter(s => !primaryStages.includes(s)),
-        [activeStageOrder, primaryStages]);
+        activeStageOrder.filter(s => INDUSTRY_SECONDARY_STAGES.includes(s)),
+        [activeStageOrder]);
 
     const batchesInStage = useMemo(() =>
         project.processingBatches.filter(b => b.currentStage === activeStage && b.status !== 'COMPLETED'),
@@ -129,21 +111,30 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
     };
 
     const handleInitializeBatch = () => {
-        const initialStage = isTier1 ? 'FLOATING' : 'DESICCATION';
+        const receptionIndex = activeStageOrder.indexOf('RECEPTION');
+        const initialStage = activeStageOrder.length > receptionIndex + 1 ? activeStageOrder[receptionIndex + 1] : 'FLOATING';
+        const requiresBedForInit = initialStage === 'DESICCATION';
 
-        if (selectedContainerIds.length !== 5) return;
-        if (!isTier1 && !selectedBedId) return; // Tier 2/3 must have a bed right away
+        if (selectedContainerIds.length === 0) return;
+        if (requiresBedForInit && !selectedBedId) return;
 
-        dispatch({
-            type: 'INITIALIZE_BATCH',
-            payload: {
-                projectId: project.id,
-                containerIds: selectedContainerIds,
-                initialStage: initialStage,
-                dryingBedId: isTier1 ? undefined : selectedBedId,
-                startDate: new Date().toISOString().split('T')[0]
-            }
-        });
+        if (initialStage === 'DESICCATION') {
+            dispatch({
+                type: 'LOAD_DRYING_BED',
+                payload: { projectId: project.id, containerIds: selectedContainerIds, dryingBedId: selectedBedId, startDate: new Date().toISOString().split('T')[0], completedBy: 'System User' }
+            });
+        } else {
+            dispatch({
+                type: 'INITIALIZE_BATCH',
+                payload: {
+                    projectId: project.id,
+                    containerIds: selectedContainerIds,
+                    initialStage: initialStage,
+                    dryingBedId: requiresBedForInit ? selectedBedId : undefined,
+                    startDate: new Date().toISOString().split('T')[0]
+                }
+            });
+        }
 
         setSelectedContainerIds([]);
         setSelectedBedId('');
@@ -162,7 +153,7 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                 stage: activeStage,
                 endDate: new Date().toISOString().split('T')[0],
                 completedBy: 'System User',
-                newBedId: assignedBedId // Attach the bed if moving into desiccation!
+                newBedId: assignedBedId
             }
         });
     };
@@ -231,6 +222,7 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                 {primaryStages.map(stage => {
                     const config = STAGE_CONFIG[stage];
                     if (!config) return null;
+
                     const Icon = config.icon;
                     const isActive = activeStage === stage;
                     const count = project.processingBatches.filter(b => b.currentStage === stage && b.status !== 'COMPLETED').length;
@@ -345,7 +337,6 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                     {isMerging && selectedBatchIds.length > 1 && (() => {
                         const totalMergeWeight = selectedBatchIds.reduce((sum, id) => sum + (project.processingBatches.find(b => b.id === id)?.weight || 0), 0);
                         const allOldCrateIds = selectedBatchIds.flatMap(id => project.processingBatches.find(b => b.id === id)?.containerIds || []);
-
                         const mergeAvailableCrates = state.containers
                             .filter(c => c.status === 'AVAILABLE' || c.weight < 48 || allOldCrateIds.includes(c.id))
                             .sort((a, b) => {
@@ -507,7 +498,7 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                             const assigned = state.containers.flatMap(c => c.contributions).filter(c => c.deliveryId === d.id).reduce((sum, c) => sum + c.weight, 0);
                                             const unassignedWeight = d.weight - assigned;
 
-                                            if (unassignedWeight <= 0) return null; // Fully assigned
+                                            if (unassignedWeight <= 0) return null;
 
                                             // Sort available crates to show partial fills first
                                             const availableCrates = state.containers
@@ -583,7 +574,6 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                                     <Button
                                                                         onClick={() => {
                                                                             if (assignmentSelectedCrates.length === 0) return;
-
                                                                             dispatch({
                                                                                 type: 'ASSIGN_CONTAINERS',
                                                                                 payload: {
@@ -592,7 +582,6 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                                                     containerIds: assignmentSelectedCrates
                                                                                 }
                                                                             });
-
                                                                             setAssigningDeliveryId(null);
                                                                             setAssignmentSelectedCrates([]);
                                                                         }}
@@ -687,126 +676,138 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                 {/* 2. BUNDLE CRATES TO BATCH */}
                                 <div className="bg-gray-50/50 dark:bg-gray-800/30 p-6 rounded-2xl border border-gray-100 dark:border-gray-700/50 backdrop-blur-sm">
                                     <div className="mb-6">
-                                        <h3 className="text-lg font-heading font-black text-brand-dark dark:text-white uppercase tracking-tight flex items-center gap-2">
-                                            {isTier1 ? <Waves className="w-5 h-5 text-cyan-500" /> : <Sun className="w-5 h-5 text-yellow-500" />}
-                                            2. {isTier1 ? 'Dump Crates to Floating Basin' : 'Load Crates to Drying Bed'}
-                                        </h3>
-                                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Select exactly 5 filled IN_USE crates (240kg) to initiate a batch.</p>
-                                    </div>
+                                        {(() => {
+                                            const initialStageAfterReception = activeStageOrder.length > activeStageOrder.indexOf('RECEPTION') + 1 ? activeStageOrder[activeStageOrder.indexOf('RECEPTION') + 1] : 'FLOATING';
+                                            const isGoingToWater = initialStageAfterReception === 'FLOATING';
+                                            const requiresBedForInit = initialStageAfterReception === 'DESICCATION';
 
-                                    <div className="flex flex-col md:flex-row gap-6">
-                                        {/* LEFT PANE: Actions & Setup */}
-                                        <div className="w-full md:w-64 flex-shrink-0 flex flex-col gap-4">
-                                            <div className="flex justify-between items-center bg-white dark:bg-gray-900 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
-                                                <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Selected</span>
-                                                <span className={`font-black ${selectedContainerIds.length === 5 ? 'text-brand-blue' : 'text-brand-dark dark:text-white'}`}>
-                                                    {selectedContainerIds.length} / 5
-                                                </span>
-                                            </div>
+                                            return (
+                                                <div className="flex flex-col gap-6">
+                                                    <div>
+                                                        <h3 className="text-lg font-heading font-black text-brand-dark dark:text-white uppercase tracking-tight flex items-center gap-2">
+                                                            {isGoingToWater ? <Waves className="w-5 h-5 text-cyan-500" /> : <Sun className="w-5 h-5 text-yellow-500" />}
+                                                            2. {isGoingToWater ? 'Dump Crates to Floating Basin' : 'Load Crates to Drying Bed'}
+                                                        </h3>
+                                                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Select filled IN_USE crates to initiate a batch.</p>
+                                                    </div>
 
-                                            {!isTier1 && (
-                                                <div className="w-full mt-2">
-                                                    <Label className="text-[10px] font-bold text-gray-400 uppercase mb-1.5 block">Target Drying Bed</Label>
-                                                    <Select value={selectedBedId} onValueChange={setSelectedBedId}>
-                                                        <SelectTrigger className="bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 h-11 shadow-sm">
-                                                            <SelectValue placeholder="Select Bed..." />
-                                                        </SelectTrigger>
-                                                        <SelectContent className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-                                                            {state.dryingBeds.map(bed => (
-                                                                <SelectItem key={bed.id} value={bed.id}>Bed {bed.uniqueNumber} ({bed.capacityKg}kg)</SelectItem>
-                                                            ))}
-                                                        </SelectContent>
-                                                    </Select>
-                                                </div>
-                                            )}
+                                                    <div className="flex flex-col md:flex-row gap-6">
+                                                        {/* LEFT PANE: Actions & Setup */}
+                                                        <div className="w-full md:w-64 flex-shrink-0 flex flex-col gap-4">
+                                                            <div className="flex justify-between items-center bg-white dark:bg-gray-900 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+                                                                <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Selected</span>
+                                                                <span className={`font-black ${selectedContainerIds.length > 0 ? 'text-brand-blue' : 'text-brand-dark dark:text-white'}`}>
+                                                                    {selectedContainerIds.length} Crates Selected
+                                                                </span>
+                                                            </div>
 
-                                            <Button
-                                                onClick={handleInitializeBatch}
-                                                disabled={selectedContainerIds.length !== 5 || (!isTier1 && !selectedBedId)}
-                                                className="w-full mt-auto h-12 bg-brand-blue hover:opacity-90 text-white font-bold px-8 rounded-xl shadow-md disabled:opacity-50"
-                                            >
-                                                {isTier1 ? 'Initialize Floating Batch' : 'Dump Crates to Bed'}
-                                            </Button>
-                                        </div>
-
-                                        {/* RIGHT PANE: Horizontally Scrolling Crate Stack */}
-                                        <div className="flex-1 min-w-0 border-l border-transparent md:border-gray-200 dark:md:border-gray-700 md:pl-6">
-                                            {state.containers.filter(c => c.status === 'IN_USE').length === 0 ? (
-                                                <div className="text-center py-16 bg-white dark:bg-gray-900/50 rounded-xl border border-dashed border-gray-200 dark:border-gray-800 h-full flex flex-col items-center justify-center">
-                                                    <Package className="w-12 h-12 text-gray-300 dark:text-gray-700 mx-auto mb-4" />
-                                                    <p className="text-gray-400 dark:text-gray-500 font-medium">No filled crates currently waiting in reception.</p>
-                                                </div>
-                                            ) : (
-                                                <div className="grid grid-rows-2 grid-flow-col gap-3 overflow-x-auto pb-4 custom-scrollbar">
-                                                    {state.containers.filter(c => c.status === 'IN_USE').map(container => {
-                                                        return (
-                                                            <div
-                                                                key={container.id}
-                                                                className={`group relative p-4 rounded-xl border-2 transition-all duration-300 cursor-pointer flex flex-col w-64 shrink-0 ${selectedContainerIds.includes(container.id)
-                                                                    ? 'bg-brand-blue/5 border-brand-blue shadow-sm'
-                                                                    : 'bg-white dark:bg-gray-900 border-gray-100 dark:border-gray-800 hover:border-gray-200 dark:hover:border-gray-700'
-                                                                    }`}
-                                                                onClick={() => {
-                                                                    setSelectedContainerIds(prev =>
-                                                                        prev.includes(container.id)
-                                                                            ? prev.filter(id => id !== container.id)
-                                                                            : prev.length < 5 ? [...prev, container.id] : prev
-                                                                    );
-                                                                }}
-                                                            >
-                                                                <div className="flex justify-between items-start mb-2">
-                                                                    <span className="font-black text-brand-dark dark:text-white text-lg leading-none">{container.label}</span>
-                                                                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${selectedContainerIds.includes(container.id) ? 'bg-brand-blue border-brand-blue' : 'border-gray-200 dark:border-gray-700'
-                                                                        }`}>
-                                                                        {selectedContainerIds.includes(container.id) && <CheckCircle2 className="w-3 h-3 text-white" />}
-                                                                    </div>
+                                                            {requiresBedForInit && (
+                                                                <div className="w-full mt-2">
+                                                                    <Label className="text-[10px] font-bold text-gray-400 uppercase mb-1.5 block">Target Drying Bed</Label>
+                                                                    <Select value={selectedBedId} onValueChange={setSelectedBedId}>
+                                                                        <SelectTrigger className="bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 h-11 shadow-sm">
+                                                                            <SelectValue placeholder="Select Bed..." />
+                                                                        </SelectTrigger>
+                                                                        <SelectContent className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+                                                                            {state.dryingBeds.map(bed => (
+                                                                                <SelectItem key={bed.id} value={bed.id}>Bed {bed.uniqueNumber} ({bed.capacityKg}kg)</SelectItem>
+                                                                            ))}
+                                                                        </SelectContent>
+                                                                    </Select>
                                                                 </div>
+                                                            )}
 
-                                                                {/* Added Farmer Traceability List */}
-                                                                <div className="text-[10px] text-gray-500 dark:text-gray-400 mb-3 space-y-1 flex-grow">
-                                                                    {container.contributions.slice(0, 2).map((contrib, idx) => {
-                                                                        const farmerName = state.farmers.find(f => f.id === contrib.farmerId)?.name || 'Unknown';
-                                                                        const pct = container.weight > 0 ? ((contrib.weight / container.weight) * 100).toFixed(0) : 0;
+                                                            <Button
+                                                                onClick={handleInitializeBatch}
+                                                                disabled={selectedContainerIds.length === 0 || (requiresBedForInit && !selectedBedId)}
+                                                                className="w-full mt-auto h-12 bg-brand-blue hover:opacity-90 text-white font-bold px-8 rounded-xl shadow-md disabled:opacity-50"
+                                                            >
+                                                                {isGoingToWater ? 'Initialize Floating Batch' : 'Dump Crates to Bed'}
+                                                            </Button>
+                                                        </div>
+
+                                                        {/* RIGHT PANE: Horizontally Scrolling Crate Stack */}
+                                                        <div className="flex-1 min-w-0 border-l border-transparent md:border-gray-200 dark:md:border-gray-700 md:pl-6">
+                                                            {state.containers.filter(c => c.status === 'IN_USE').length === 0 ? (
+                                                                <div className="text-center py-16 bg-white dark:bg-gray-900/50 rounded-xl border border-dashed border-gray-200 dark:border-gray-800 h-full flex flex-col items-center justify-center">
+                                                                    <Package className="w-12 h-12 text-gray-300 dark:text-gray-700 mx-auto mb-4" />
+                                                                    <p className="text-gray-400 dark:text-gray-500 font-medium">No filled crates currently waiting in reception.</p>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="grid grid-rows-2 grid-flow-col gap-3 overflow-x-auto pb-4 custom-scrollbar">
+                                                                    {state.containers.filter(c => c.status === 'IN_USE').map(container => {
                                                                         return (
-                                                                            <div key={idx} className="flex justify-between items-center">
-                                                                                <span className="truncate pr-2 font-medium">{farmerName}</span>
-                                                                                <span className="font-mono whitespace-nowrap">{contrib.weight.toFixed(1)}kg <span className="opacity-60">({pct}%)</span></span>
+                                                                            <div
+                                                                                key={container.id}
+                                                                                className={`group relative p-4 rounded-xl border-2 transition-all duration-300 cursor-pointer flex flex-col w-64 shrink-0 ${selectedContainerIds.includes(container.id)
+                                                                                    ? 'bg-brand-blue/5 border-brand-blue shadow-sm'
+                                                                                    : 'bg-white dark:bg-gray-900 border-gray-100 dark:border-gray-800 hover:border-gray-200 dark:hover:border-gray-700'
+                                                                                    }`}
+                                                                                onClick={() => {
+                                                                                    setSelectedContainerIds(prev =>
+                                                                                        prev.includes(container.id)
+                                                                                            ? prev.filter(id => id !== container.id)
+                                                                                            : [...prev, container.id]
+                                                                                    );
+                                                                                }}
+                                                                            >
+                                                                                <div className="flex justify-between items-start mb-2">
+                                                                                    <span className="font-black text-brand-dark dark:text-white text-lg leading-none">{container.label}</span>
+                                                                                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${selectedContainerIds.includes(container.id) ? 'bg-brand-blue border-brand-blue' : 'border-gray-200 dark:border-gray-700'
+                                                                                        }`}>
+                                                                                        {selectedContainerIds.includes(container.id) && <CheckCircle2 className="w-3 h-3 text-white" />}
+                                                                                    </div>
+                                                                                </div>
+
+                                                                                {/* Added Farmer Traceability List */}
+                                                                                <div className="text-[10px] text-gray-500 dark:text-gray-400 mb-3 space-y-1 flex-grow">
+                                                                                    {container.contributions.slice(0, 2).map((contrib, idx) => {
+                                                                                        const farmerName = state.farmers.find(f => f.id === contrib.farmerId)?.name || 'Unknown';
+                                                                                        const pct = container.weight > 0 ? ((contrib.weight / container.weight) * 100).toFixed(0) : 0;
+                                                                                        return (
+                                                                                            <div key={idx} className="flex justify-between items-center">
+                                                                                                <span className="truncate pr-2 font-medium">{farmerName}</span>
+                                                                                                <span className="font-mono whitespace-nowrap">{contrib.weight.toFixed(1)}kg <span className="opacity-60">({pct}%)</span></span>
+                                                                                            </div>
+                                                                                        );
+                                                                                    })}
+                                                                                    {container.contributions.length > 2 && (
+                                                                                        <div className="text-brand-blue dark:text-blue-400 font-bold italic pt-1">
+                                                                                            + {container.contributions.length - 2} more farmers
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+
+                                                                                <div className="space-y-1 mt-auto">
+                                                                                    <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                                                                                        <span>Current Fill</span>
+                                                                                        <span className="text-brand-dark dark:text-white">{container.weight.toFixed(1)}kg</span>
+                                                                                    </div>
+                                                                                    <div className="w-full bg-gray-100 dark:bg-gray-800 h-1.5 rounded-full overflow-hidden flex">
+                                                                                        {container.contributions.map((contrib, idx) => {
+                                                                                            const colors = ['bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-amber-500', 'bg-pink-500', 'bg-teal-500'];
+                                                                                            const color = colors[idx % colors.length];
+                                                                                            return (
+                                                                                                <div
+                                                                                                    key={idx}
+                                                                                                    className={`${color} h-full transition-all`}
+                                                                                                    style={{ width: `${(contrib.weight / 48) * 100}%` }}
+                                                                                                    title={`${state.farmers.find(f => f.id === contrib.farmerId)?.name}: ${contrib.weight.toFixed(1)}kg`}
+                                                                                                />
+                                                                                            );
+                                                                                        })}
+                                                                                    </div>
+                                                                                </div>
                                                                             </div>
                                                                         );
                                                                     })}
-                                                                    {container.contributions.length > 2 && (
-                                                                        <div className="text-brand-blue dark:text-blue-400 font-bold italic pt-1">
-                                                                            + {container.contributions.length - 2} more farmers
-                                                                        </div>
-                                                                    )}
                                                                 </div>
-
-                                                                <div className="space-y-1 mt-auto">
-                                                                    <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider text-gray-400">
-                                                                        <span>Current Fill</span>
-                                                                        <span className="text-brand-dark dark:text-white">{container.weight.toFixed(1)}kg</span>
-                                                                    </div>
-                                                                    <div className="w-full bg-gray-100 dark:bg-gray-800 h-1.5 rounded-full overflow-hidden flex">
-                                                                        {container.contributions.map((contrib, idx) => {
-                                                                            const colors = ['bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-amber-500', 'bg-pink-500', 'bg-teal-500'];
-                                                                            const color = colors[idx % colors.length];
-                                                                            return (
-                                                                                <div
-                                                                                    key={idx}
-                                                                                    className={`${color} h-full transition-all`}
-                                                                                    style={{ width: `${(contrib.weight / 48) * 100}%` }}
-                                                                                    title={`${state.farmers.find(f => f.id === contrib.farmerId)?.name}: ${contrib.weight.toFixed(1)}kg`}
-                                                                                />
-                                                                            );
-                                                                        })}
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
+                                                            )}
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                            )}
-                                        </div>
+                                            );
+                                        })()}
                                     </div>
                                 </div>
                             </div>
@@ -832,6 +833,29 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                             const requiresBedSelection = nextStage === 'DESICCATION' && !batch.dryingBedId;
                                             const isPending = batch.status === 'PENDING_APPROVAL';
 
+                                            // --- UNIFIED TELEMETRY MATH ---
+                                            const sortedLogs = [...(batch.moistureLogs || [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+                                            const latestLog = sortedLogs[sortedLogs.length - 1];
+                                            const lastMoisture = latestLog?.percentage;
+
+                                            const target = project.targetMoisturePercentage || 11.5;
+                                            const currMoisture = lastMoisture || 20; // Fallback
+                                            const targetMDec = target / 100;
+                                            const currMDec = currMoisture / 100;
+                                            const sf = project.estShrinkFactor || 6.25;
+
+                                            // Current Yield based on Dry Matter Mass Balance
+                                            const yieldPct = (1 / sf) * ((1 - targetMDec) / (1 - currMDec)) * 100;
+                                            const currentEstWeight = sortedLogs.length > 0 ? batch.weight * (yieldPct / 100) : batch.weight;
+
+                                            const isReadyToHarvest = lastMoisture !== undefined && Math.abs(lastMoisture - target) <= 0.5;
+                                            const desiccationStart = batch.history.find(h => h.stage === 'DESICCATION')?.startDate;
+
+                                            // Tie the Days counter to the most recent moisture log date, not the system clock
+                                            const latestDate = latestLog ? new Date(latestLog.date) : new Date();
+                                            const daysDrying = desiccationStart ? Math.max(0, dayDiff(new Date(desiccationStart), latestDate)) : 0;
+                                            // ------------------------------
+
                                             return (
                                                 <div
                                                     key={batch.id}
@@ -849,7 +873,7 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                     <div className="p-5">
                                                         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
                                                             <div className="flex items-center gap-5">
-                                                                {activeStage !== 'FLOATING' && (
+                                                                {activeStage !== 'FLOATING' && activeStage !== 'DESICCATION' && (
                                                                     <div className="relative">
                                                                         <Checkbox
                                                                             id={`batch-${batch.id}`}
@@ -867,25 +891,48 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                                     </div>
                                                                 )}
                                                                 <div>
-                                                                    <div className="flex items-center gap-3 mb-1">
-                                                                        <span className="font-black text-brand-dark dark:text-white text-lg tracking-tight">Batch #{batch.id.slice(0, 8)}</span>
-                                                                        <Badge className="bg-gray-50 dark:bg-gray-900 text-brand-blue border border-brand-blue/30 font-bold px-2 py-0.5">
-                                                                            {batch.weight.toFixed(1)}kg
-                                                                        </Badge>
-                                                                        {batch.isOutsourced && (
-                                                                            <Badge variant="outline" className="text-amber-600 border-amber-600/30">
-                                                                                Outsourced
-                                                                            </Badge>
+                                                                    <div className="flex flex-col gap-1 mb-1">
+                                                                        {activeStage === 'DESICCATION' && batch.dryingBedId ? (
+                                                                            <>
+                                                                                <div className="flex items-center gap-3">
+                                                                                    <span className="font-black text-brand-dark dark:text-white text-2xl tracking-tight uppercase whitespace-nowrap">
+                                                                                        {state.dryingBeds.find(b => b.id === batch.dryingBedId)?.uniqueNumber || 'Unknown Bed'}
+                                                                                    </span>
+                                                                                    <Badge className="bg-gray-50 dark:bg-gray-900 text-brand-blue border border-brand-blue/30 font-bold px-2 py-0.5 whitespace-nowrap">
+                                                                                        {sortedLogs.length > 0 ? `~ ${currentEstWeight.toFixed(1)}kg` : `${batch.weight.toFixed(1)}kg Wet`}
+                                                                                    </Badge>
+                                                                                    {batch.isOutsourced && (
+                                                                                        <Badge variant="outline" className="text-amber-600 border-amber-600/30">
+                                                                                            Outsourced
+                                                                                        </Badge>
+                                                                                    )}
+                                                                                </div>
+                                                                                <span className="text-sm font-bold text-gray-400 font-mono tracking-tight">Batch #{batch.id.slice(0, 8)}</span>
+                                                                            </>
+                                                                        ) : (
+                                                                            <div className="flex items-center gap-3 mb-1">
+                                                                                <span className="font-black text-brand-dark dark:text-white text-lg tracking-tight">Batch #{batch.id.slice(0, 8)}</span>
+                                                                                <Badge className="bg-gray-50 dark:bg-gray-900 text-brand-blue border border-brand-blue/30 font-bold px-2 py-0.5 whitespace-nowrap">
+                                                                                    {sortedLogs.length > 0 && activeStage === 'DESICCATION' ? `~ ${currentEstWeight.toFixed(1)}kg` : `${batch.weight.toFixed(1)}kg`}
+                                                                                </Badge>
+                                                                                {batch.isOutsourced && (
+                                                                                    <Badge variant="outline" className="text-amber-600 border-amber-600/30">
+                                                                                        Outsourced
+                                                                                    </Badge>
+                                                                                )}
+                                                                            </div>
                                                                         )}
                                                                     </div>
-                                                                    <div className="flex items-center gap-4 text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">
-                                                                        <span className="flex items-center gap-1.5">
-                                                                            <ContainerIcon className="w-3 h-3" />
-                                                                            {batch.containerIds.length} Containers
-                                                                        </span>
+                                                                    <div className="flex items-center gap-4 text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest mt-1">
+                                                                        {batch.containerIds && batch.containerIds.length > 0 && activeStage !== 'DESICCATION' && (
+                                                                            <span className="flex items-center gap-1.5">
+                                                                                <ContainerIcon className="w-3 h-3" />
+                                                                                {batch.containerIds.length} Containers
+                                                                            </span>
+                                                                        )}
                                                                         <span className="flex items-center gap-1.5">
                                                                             <Clock className="w-3 h-3" />
-                                                                            {formatDate(new Date(batch.history[batch.history.length - 1]?.startDate || Date.now()))}
+                                                                            {formatDate(new Date(batch.history.find(h => h.stage === activeStage)?.startDate || batch.history[batch.history.length - 1]?.startDate || Date.now()))}
                                                                         </span>
                                                                     </div>
                                                                 </div>
@@ -914,58 +961,221 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                                     </div>
                                                                 )}
 
-                                                                {activeStage === 'DESICCATION' && (
-                                                                    <div className="flex items-center gap-4 mr-4">
-                                                                        <div className="flex flex-col items-end">
-                                                                            <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase mb-1">Current Moisture</span>
-                                                                            <div className="flex items-center gap-2">
-                                                                                <div className="w-24 h-2 bg-gray-100 dark:bg-gray-900 rounded-full overflow-hidden">
-                                                                                    <div
-                                                                                        className={`h-full transition-all ${(batch.moistureLogs[batch.moistureLogs.length - 1]?.percentage || 20) <= (project.targetMoisturePercentage || 11.5) ? 'bg-green-500' : 'bg-amber-500'}`}
-                                                                                        style={{ width: `${Math.max(0, 100 - ((batch.moistureLogs[batch.moistureLogs.length - 1]?.percentage || 20) - 10) * 10)}%` }}
-                                                                                    />
+                                                                {activeStage === 'DESICCATION' && (() => {
+                                                                    const isBedAssigned = !!batch.dryingBedId;
+                                                                    // THE GATE: If no bed is assigned, force them to pour the crates.
+                                                                    if (!isBedAssigned) {
+                                                                        return (
+                                                                            <div className="bg-yellow-50 dark:bg-yellow-900/10 p-4 rounded-xl border border-yellow-200 dark:border-yellow-800 flex flex-col md:flex-row items-center gap-4 mt-4">
+                                                                                <div className="flex-1">
+                                                                                    <h4 className="font-bold text-yellow-800 dark:text-yellow-400 flex items-center gap-2"><Sun className="w-4 h-4" /> Crates Waiting for Bed</h4>
+                                                                                    <p className="text-xs text-yellow-700 dark:text-yellow-500 mt-1">This batch has left the wet mill. Assign it to a drying bed to free up these crates.</p>
                                                                                 </div>
-                                                                                <span className="text-sm font-black text-brand-dark dark:text-white">
-                                                                                    {batch.moistureLogs[batch.moistureLogs.length - 1]?.percentage || '--'}%
-                                                                                </span>
+                                                                                <div className="flex items-center gap-2 w-full md:w-auto">
+                                                                                    <Select value={inlineBedSelections[batch.id] || ''} onValueChange={(val) => setInlineBedSelections(prev => ({ ...prev, [batch.id]: val }))}>
+                                                                                        <SelectTrigger className="w-full sm:w-48 bg-white dark:bg-gray-800 h-10">
+                                                                                            <SelectValue placeholder="Select Target Bed..." />
+                                                                                        </SelectTrigger>
+                                                                                        <SelectContent>
+                                                                                            {state.dryingBeds.map(bed => <SelectItem key={bed.id} value={bed.id}>Bed {bed.uniqueNumber}</SelectItem>)}
+                                                                                        </SelectContent>
+                                                                                    </Select>
+                                                                                    <Button
+                                                                                        disabled={!inlineBedSelections[batch.id]}
+                                                                                        onClick={() => {
+                                                                                            dispatch({ type: 'POUR_BATCH_TO_BED', payload: { projectId: project.id, batchId: batch.id, dryingBedId: inlineBedSelections[batch.id] } });
+                                                                                        }}
+                                                                                        className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold"
+                                                                                    >
+                                                                                        Pour onto Bed
+                                                                                    </Button>
+                                                                                </div>
                                                                             </div>
-                                                                        </div>
-                                                                        <div className="flex flex-col items-start border-l border-gray-200 dark:border-gray-700 pl-4">
-                                                                            <span className="text-[10px] font-bold text-brand-blue uppercase mb-1">Log New Reading</span>
-                                                                            <div className="flex items-center gap-2">
-                                                                                <Input
-                                                                                    type="number"
-                                                                                    step="0.1"
-                                                                                    placeholder="e.g. 18.5"
-                                                                                    className="w-24 h-8 text-sm bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700"
-                                                                                    value={moistureInputs[batch.id] || ''}
-                                                                                    onChange={(e) => setMoistureInputs(prev => ({ ...prev, [batch.id]: e.target.value }))}
-                                                                                />
-                                                                                <Button
-                                                                                    size="sm"
-                                                                                    disabled={!moistureInputs[batch.id]}
-                                                                                    onClick={() => {
-                                                                                        dispatch({
-                                                                                            type: 'ADD_BATCH_MOISTURE_MEASUREMENT',
-                                                                                            payload: {
-                                                                                                projectId: project.id,
-                                                                                                batchId: batch.id,
-                                                                                                data: {
-                                                                                                    date: new Date().toISOString().split('T')[0],
-                                                                                                    percentage: parseFloat(moistureInputs[batch.id])
+                                                                        );
+                                                                    }
+
+                                                                    // THE BED CARD: If assigned, show the rich telemetry UI.
+                                                                    return (
+                                                                        <div className="flex flex-col gap-6 mt-4 pt-4 border-t border-gray-100 dark:border-gray-800 w-full">
+
+                                                                            {/* TOP ROW: Traceability & Telemetry */}
+                                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
+                                                                                <div>
+                                                                                    <h5 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Farmers on this Bed</h5>
+                                                                                    <div className="grid grid-cols-2 gap-2">
+                                                                                        {(batch.traceabilitySnapshot || []).slice(0, 6).map(snap => {
+                                                                                            const farmer = state.farmers.find(f => f.id === snap.farmerId);
+                                                                                            return (
+                                                                                                <div key={snap.farmerId} className="bg-gray-50 dark:bg-gray-900 p-2 rounded-lg border border-gray-200 dark:border-gray-700 text-xs">
+                                                                                                    <div className="font-bold text-brand-dark dark:text-white truncate">{farmer?.name || 'Unknown'}</div>
+                                                                                                    <div className="text-brand-blue font-mono mt-0.5">{snap.weightKg.toFixed(1)}kg <span className="opacity-50 text-gray-500">({(snap.weightKg / batch.weight * 100).toFixed(0)}%)</span></div>
+                                                                                                </div>
+                                                                                            );
+                                                                                        })}
+                                                                                    </div>
+                                                                                    {(batch.traceabilitySnapshot || []).length > 6 && <p className="text-xs text-brand-blue font-bold mt-2">+ {(batch.traceabilitySnapshot || []).length - 6} more farmers</p>}
+                                                                                </div>
+
+                                                                                <div className="flex flex-col gap-4">
+                                                                                    <div className="grid grid-cols-3 gap-2 bg-gray-50 dark:bg-gray-900 p-3 rounded-xl border border-gray-200 dark:border-gray-700">
+                                                                                        <div>
+                                                                                            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Days</p>
+                                                                                            <p className="text-lg font-black text-brand-dark dark:text-white">{daysDrying}</p>
+                                                                                        </div>
+                                                                                        <div className="text-center border-x border-gray-200 dark:border-gray-700">
+                                                                                            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Est. Yield</p>
+                                                                                            <p className="text-lg font-black text-purple-600 dark:text-purple-400">
+                                                                                                {yieldPct.toFixed(1)}%
+                                                                                            </p>
+                                                                                        </div>
+                                                                                        <div className="text-right">
+                                                                                            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Wet Input</p>
+                                                                                            <p className="text-lg font-black text-brand-blue">{batch.weight.toFixed(0)} kg</p>
+                                                                                        </div>
+                                                                                    </div>
+
+                                                                                    <div className="flex items-center gap-2">
+                                                                                        <Input
+                                                                                            type="date"
+                                                                                            className="h-10 text-xs w-[130px]"
+                                                                                            value={moistureDates[batch.id] || new Date().toISOString().split('T')[0]}
+                                                                                            onChange={(e) => setMoistureDates(prev => ({ ...prev, [batch.id]: e.target.value }))}
+                                                                                        />
+                                                                                        <Input
+                                                                                            type="number" step="0.1" placeholder="Moisture %"
+                                                                                            className="h-10 text-sm flex-1"
+                                                                                            value={moistureInputs[batch.id] || ''}
+                                                                                            onChange={(e) => setMoistureInputs(prev => ({ ...prev, [batch.id]: e.target.value }))}
+                                                                                        />
+                                                                                        <Button
+                                                                                            disabled={!moistureInputs[batch.id]}
+                                                                                            onClick={() => {
+                                                                                                const logDate = moistureDates[batch.id] || new Date().toISOString().split('T')[0];
+                                                                                                dispatch({ type: 'ADD_BATCH_MOISTURE_MEASUREMENT', payload: { projectId: project.id, batchId: batch.id, data: { date: logDate, percentage: parseFloat(moistureInputs[batch.id]) } } });
+                                                                                                setMoistureInputs(prev => { const next = { ...prev }; delete next[batch.id]; return next; });
+                                                                                            }}
+                                                                                            className="bg-brand-blue hover:bg-brand-blue/90 h-10 text-xs text-white"
+                                                                                        >
+                                                                                            Save
+                                                                                        </Button>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+
+                                                                            {/* MIDDLE ROW: Mini-Graph */}
+                                                                            {sortedLogs.length > 0 && (
+                                                                                <div className="h-32 w-full bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-2 relative overflow-hidden flex items-end">
+                                                                                    <div className="absolute top-2 left-3 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Drying Curve</div>
+                                                                                    <div className="absolute right-3 top-2 flex items-center gap-2">
+                                                                                        <div className="w-3 h-0.5 border-t border-dashed border-green-500"></div>
+                                                                                        <span className="text-[10px] font-bold text-gray-400">Target {target}%</span>
+                                                                                    </div>
+                                                                                    <svg width="100%" height="100%" className="overflow-visible mt-6">
+                                                                                        {(() => {
+                                                                                            const targetY = 100 - ((target / 50) * 100); // Exact Y percentage (0-50% scale)
+                                                                                            return (
+                                                                                                <>
+                                                                                                    {/* Target Line */}
+                                                                                                    <line x1="0" x2="100%" y1={`${targetY}%`} y2={`${targetY}%`} stroke="#22c55e" strokeWidth="1.5" strokeDasharray="4 4" />
+
+                                                                                                    {/* Curve Segments using percentage lines to prevent viewBox distortion */}
+                                                                                                    {sortedLogs.map((log, i) => {
+                                                                                                        if (i === 0) return null;
+                                                                                                        const prevLog = sortedLogs[i - 1];
+
+                                                                                                        const prevLogDays = desiccationStart ? dayDiff(new Date(desiccationStart), new Date(prevLog.date)) : 0;
+                                                                                                        const prevX = Math.min(100, Math.max(0, (prevLogDays / 30) * 100));
+                                                                                                        const prevY = Math.min(100, Math.max(0, 100 - ((prevLog.percentage / 50) * 100)));
+
+                                                                                                        const currLogDays = desiccationStart ? dayDiff(new Date(desiccationStart), new Date(log.date)) : 0;
+                                                                                                        const currX = Math.min(100, Math.max(0, (currLogDays / 30) * 100));
+                                                                                                        const currY = Math.min(100, Math.max(0, 100 - ((log.percentage / 50) * 100)));
+
+                                                                                                        return (
+                                                                                                            <line
+                                                                                                                key={`segment-${i}`}
+                                                                                                                x1={`${prevX}%`} y1={`${prevY}%`}
+                                                                                                                x2={`${currX}%`} y2={`${currY}%`}
+                                                                                                                stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round"
+                                                                                                            />
+                                                                                                        );
+                                                                                                    })}
+
+                                                                                                    {/* Points */}
+                                                                                                    {sortedLogs.map((log, i) => {
+                                                                                                        const logDays = desiccationStart ? dayDiff(new Date(desiccationStart), new Date(log.date)) : 0;
+                                                                                                        const x = Math.min(100, Math.max(0, (logDays / 30) * 100));
+                                                                                                        const y = Math.min(100, Math.max(0, 100 - ((log.percentage / 50) * 100)));
+                                                                                                        return (
+                                                                                                            <g key={`point-${i}`}>
+                                                                                                                <circle cx={`${x}%`} cy={`${y}%`} r="4" fill="#3b82f6" className="dark:fill-blue-400 cursor-pointer hover:fill-blue-500" />
+                                                                                                                <title>Day {logDays}: {log.percentage}%</title>
+                                                                                                            </g>
+                                                                                                        );
+                                                                                                    })}
+                                                                                                </>
+                                                                                            );
+                                                                                        })()}
+                                                                                    </svg>
+                                                                                </div>
+                                                                            )}
+
+                                                                            {/* BOTTOM ROW: Smart Harvest */}
+                                                                            {isReadyToHarvest && (
+                                                                                <div className="p-4 bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800 rounded-xl">
+                                                                                    <div className="flex justify-between items-center mb-3">
+                                                                                        <span className="text-sm font-bold text-green-700 dark:text-green-400">Target Moisture Achieved ({lastMoisture}%)</span>
+                                                                                        <Button
+                                                                                            onClick={() => {
+                                                                                                if (harvestingBatchId === batch.id) {
+                                                                                                    setHarvestingBatchId(null);
+                                                                                                } else {
+                                                                                                    setHarvestingBatchId(batch.id);
+                                                                                                    setHarvestWeight((batch.weight * (yieldPct / 100)).toFixed(1));
                                                                                                 }
-                                                                                            }
-                                                                                        });
-                                                                                        setMoistureInputs(prev => { const next = { ...prev }; delete next[batch.id]; return next; });
-                                                                                    }}
-                                                                                    className="bg-brand-blue hover:bg-brand-blue/90 h-8 text-xs text-white"
-                                                                                >
-                                                                                    Save
-                                                                                </Button>
-                                                                            </div>
+                                                                                            }}
+                                                                                            className="bg-green-600 hover:bg-green-700 text-white font-bold"
+                                                                                        >
+                                                                                            {harvestingBatchId === batch.id ? 'Cancel' : 'Harvest & Weigh Out Bed'}
+                                                                                        </Button>
+                                                                                    </div>
+
+                                                                                    {harvestingBatchId === batch.id && (() => {
+                                                                                        const hwNum = parseFloat(harvestWeight) || 0;
+                                                                                        const fullBags = Math.floor(hwNum / 60);
+                                                                                        const remainder = (hwNum % 60).toFixed(1);
+
+                                                                                        return (
+                                                                                            <div className="flex flex-col md:flex-row gap-4 pt-3 border-t border-green-200 dark:border-green-800">
+                                                                                                <div className="flex-1">
+                                                                                                    <Label className="text-xs uppercase text-gray-500 mb-1 block">Final Dried Weight (kg)</Label>
+                                                                                                    <Input type="number" step="0.1" value={harvestWeight} onChange={e => setHarvestWeight(e.target.value)} className="bg-white dark:bg-gray-900 font-bold" />
+                                                                                                </div>
+                                                                                                <div className="flex-1 flex flex-col justify-end">
+                                                                                                    <div className="h-10 px-4 bg-green-100 dark:bg-green-800/30 text-green-800 dark:text-green-300 rounded-md flex items-center font-mono text-sm border border-green-200 dark:border-green-700">
+                                                                                                        Yields: {fullBags} full bags (60kg) + {remainder}kg partial
+                                                                                                    </div>
+                                                                                                </div>
+                                                                                                <div className="flex flex-col justify-end">
+                                                                                                    <Button
+                                                                                                        disabled={!hwNum}
+                                                                                                        onClick={() => {
+                                                                                                            dispatch({ type: 'HARVEST_DRYING_BED', payload: { projectId: project.id, batchId: batch.id, driedWeight: hwNum, bagCount: fullBags, endDate: new Date().toISOString().split('T')[0], completedBy: 'System User' } });
+                                                                                                            setHarvestingBatchId(null); setHarvestWeight('');
+                                                                                                        }}
+                                                                                                        className="h-10 bg-green-600 hover:bg-green-700 text-white w-full md:w-auto"
+                                                                                                    >
+                                                                                                        Confirm Harvest
+                                                                                                    </Button>
+                                                                                                </div>
+                                                                                            </div>
+                                                                                        );
+                                                                                    })()}
+                                                                                </div>
+                                                                            )}
                                                                         </div>
-                                                                    </div>
-                                                                )}
+                                                                    );
+                                                                })()}
 
                                                                 {activeStage === 'RESTING' && (
                                                                     <div className="flex flex-col items-end mr-4">
@@ -991,9 +1201,9 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                                     <Button
                                                                         variant="secondary"
                                                                         size="sm"
-                                                                        disabled={isPending || (requiresBedSelection && !inlineBedSelections[batch.id])}
+                                                                        disabled={isPending}
                                                                         className="bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 text-brand-dark dark:text-white font-bold border border-gray-200 dark:border-gray-700 rounded-xl h-10 px-4"
-                                                                        onClick={() => handleMoveToNextStage(batch.id, inlineBedSelections[batch.id])}
+                                                                        onClick={() => handleMoveToNextStage(batch.id)}
                                                                     >
                                                                         {activeStage === 'RESTING' ? 'End Resting' : `Move to ${nextStage ? STAGE_CONFIG[nextStage].label : 'Next'}`}
                                                                         <ArrowRight className="w-4 h-4 ml-2 text-brand-blue" />
@@ -1007,7 +1217,7 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                         </div>
 
                                                         {/* Visual Physical Crates inside the Pipeline */}
-                                                        {batch.containerIds.length > 0 && (
+                                                        {batch.containerIds && batch.containerIds.length > 0 && !batch.dryingBedId && (
                                                             <div className="mt-4 border-t border-gray-100 dark:border-gray-700/50 pt-4">
                                                                 <h5 className="text-[10px] font-bold text-gray-500 uppercase mb-2 tracking-widest">Physical Crates Attached</h5>
                                                                 <div className="flex overflow-x-auto gap-3 pb-2 custom-scrollbar">

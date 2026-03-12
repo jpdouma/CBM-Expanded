@@ -1,3 +1,4 @@
+// ==> src/utils/migrations.ts <==
 import { defaultClientDetails } from "../reducers/projectReducer";
 import type { ProjectState, Project, ClientDetails, Financier, DryingBed, StorageLocation, Farmer } from "../types";
 
@@ -8,7 +9,6 @@ export const migrateLegacyState = (parsedState: any): ProjectState => {
     globalFarmers.forEach(f => globalFarmerMap.set(f.id, f));
 
     const projectsToProcess = parsedState.projects || [];
-    
     // If global farmers list is empty but projects have farmers, lift them up
     projectsToProcess.forEach((p: any) => {
         if (p.farmers && Array.isArray(p.farmers)) {
@@ -32,7 +32,7 @@ export const migrateLegacyState = (parsedState: any): ProjectState => {
 
     // 1. Migrate Projects
     const projects: Project[] = projectsToProcess.map((p: any) => {
-        
+
         // Generate farmerIds list from embedded farmers
         let farmerIds: string[] = p.farmerIds || [];
         if (p.farmers && Array.isArray(p.farmers)) {
@@ -50,19 +50,24 @@ export const migrateLegacyState = (parsedState: any): ProjectState => {
             // Ensure new booleans exist
             isMachineDrying: p.isMachineDrying || false,
             // Deep merge checklist to ensure all keys exist
-            preProjectChecklist: { 
-                contractSigned: false, accountCardSubmitted: false, projectSetupComplete: false, 
+            preProjectChecklist: {
+                contractSigned: false, accountCardSubmitted: false, projectSetupComplete: false,
                 forecastGenerated: false, firstWithdrawalReceived: false, projectStarted: false,
-                ...(p.preProjectChecklist || {}) 
+                ...(p.preProjectChecklist || {})
             },
             // Ensure arrays exist
-            setupCosts: p.setupCosts || [], 
+            setupCosts: p.setupCosts || [],
             // farmers: p.farmers || [], // Legacy array kept for safety but we prefer farmerIds now
             farmerIds: farmerIds,
             advances: p.advances || [],
-            deliveries: p.deliveries || [], dryingBatches: p.dryingBatches || [], storedBatches: p.storedBatches || [],
-            hullingBatches: p.hullingBatches || [], sales: p.sales || [],
-            financing: p.financing || [], dryingBedIds: p.dryingBedIds || [],
+            deliveries: p.deliveries || [],
+            processingPipeline: p.processingPipeline || ['RECEPTION', 'FLOATING', 'DESICCATION', 'RESTING'],
+            dryingBatches: p.dryingBatches || [],
+            storedBatches: p.storedBatches || [],
+            hullingBatches: p.hullingBatches || [],
+            sales: p.sales || [],
+            financing: p.financing || [],
+            dryingBedIds: p.dryingBedIds || [],
             // Ensure clientDetails structure
             clientDetails: { ...defaultClientDetails, ...(p.clientDetails || {}), id: p.clientDetails?.id || crypto.randomUUID() },
             // Migrate Hulled Batches with new palletLevel
@@ -101,10 +106,10 @@ export const migrateLegacyState = (parsedState: any): ProjectState => {
         return u;
     });
 
-    return { 
+    return {
         projects,
         clients,
-        financiers: parsedState.financiers || [], 
+        financiers: parsedState.financiers || [],
         dryingBeds: parsedState.dryingBeds || [],
         selectedProjectIds: parsedState.selectedProjectIds || [],
         storageLocations,
@@ -120,24 +125,24 @@ export const migrateLegacyState = (parsedState: any): ProjectState => {
 };
 
 export const processImportedData = (
-    importedProjects: any[], 
-    importedClients: any[], 
-    importedFinanciers: any[], 
+    importedProjects: any[],
+    importedClients: any[],
+    importedFinanciers: any[],
     importedDryingBeds: any[],
     importedStorageLocations: any[],
     importedFarmers?: any[]
 ): { projects: Project[], clients: ClientDetails[], financiers: Financier[], dryingBeds: DryingBed[], storageLocations: StorageLocation[], farmers: Farmer[] } => {
-    
+
     // Reuse migration logic for projects to ensure consistency
-    const tempState = { 
-        projects: importedProjects, 
-        clients: importedClients, 
-        financiers: importedFinanciers, 
-        dryingBeds: importedDryingBeds, 
+    const tempState = {
+        projects: importedProjects,
+        clients: importedClients,
+        financiers: importedFinanciers,
+        dryingBeds: importedDryingBeds,
         storageLocations: importedStorageLocations,
         farmers: importedFarmers
     };
-    
+
     const migratedState = migrateLegacyState(tempState);
 
     return {

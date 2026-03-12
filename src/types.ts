@@ -445,8 +445,11 @@ export interface Project {
     setupCosts: ProjectSetupCost[];
     advances: Advance[];
     deliveries: Delivery[];
+
     // NEW UNIFIED STATE MACHINE
+    processingPipeline: ProcessingStage[]; // New data-driven flow
     processingBatches: ProcessingBatch[];
+
     // LEGACY ARRAYS (kept for compatibility during transition if needed, but we should migrate)
     dryingBatches: DryingBatch[];
     storedBatches: StoredBatch[];
@@ -655,14 +658,29 @@ type AddSaleAction = {
 type TransferStockAction = { type: 'TRANSFER_STOCK'; payload: { sourceProjectId: string; targetProjectId: string; batchId: string; weight: number; date: string } };
 type UpdateEntryDateAction = { type: 'UPDATE_ENTRY_DATE', payload: { projectId: string, type: ActivityLogEntryType, id: string, newDate: string } };
 type BulkUpdateEntryDatesAction = { type: 'BULK_UPDATE_ENTRY_DATES', payload: { updates: { projectId: string; type: ActivityLogEntryType; id: string; newDate: string }[] } };
-type RecalculateUsdValuesAction = { type: 'RECALCULATE_USD_VALUES', payload: { progressCallback: (progress: number) => void } };
 type SaveForecastSnapshotAction = { type: 'SAVE_FORECAST_SNAPSHOT'; payload: { projectId: string; snapshot: ForecastSnapshot } };
 type DeleteForecastSnapshotAction = { type: 'DELETE_FORECAST_SNAPSHOT'; payload: { projectId: string; snapshotId: string } };
 type UpdateGlobalCurrencyAction = { type: 'UPDATE_GLOBAL_CURRENCY'; payload: { currency: Currency } };
+type RecalculateUsdValuesAction = { type: 'RECALCULATE_USD_VALUES', payload: { progressCallback: (progress: number) => void } };
 
 type DeleteLogEntryAction = {
     type: 'DELETE_LOG_ENTRY';
     payload: { projectId: string; type: ActivityLogEntryType; id: string; }
+};
+
+type LoadDryingBedAction = {
+    type: 'LOAD_DRYING_BED';
+    payload: { projectId: string; containerIds: string[]; dryingBedId: string; startDate: string; completedBy: string; }
+};
+
+type HarvestDryingBedAction = {
+    type: 'HARVEST_DRYING_BED';
+    payload: { projectId: string; batchId: string; driedWeight: number; bagCount: number; endDate: string; completedBy: string; }
+};
+
+type PourBatchToBedAction = {
+    type: 'POUR_BATCH_TO_BED';
+    payload: { projectId: string; batchId: string; dryingBedId: string; }
 };
 
 export type ProjectAction =
@@ -743,4 +761,7 @@ export type ProjectAction =
     | DeleteForecastSnapshotAction
     | UpdateGlobalCurrencyAction
     | RecalculateUsdValuesAction
-    | DeleteLogEntryAction;
+    | DeleteLogEntryAction
+    | LoadDryingBedAction
+    | HarvestDryingBedAction
+    | PourBatchToBedAction;

@@ -26,6 +26,7 @@ const handleProjectManagement = (state: ProjectState, action: any): ProjectState
                 ...payload,
                 projects: (payload.projects || state.projects || []).map((p: any) => ({
                     ...p,
+                    processingPipeline: p.processingPipeline || ['RECEPTION', 'FLOATING', 'DESICCATION', 'RESTING'],
                     processingBatches: p.processingBatches || [],
                     dryingBatches: p.dryingBatches || [],
                     storedBatches: p.storedBatches || [],
@@ -113,6 +114,7 @@ const handleProjectManagement = (state: ProjectState, action: any): ProjectState
             );
             const projects = (processedData.projects || []).map((p: any) => ({
                 ...p,
+                processingPipeline: p.processingPipeline || ['RECEPTION', 'FLOATING', 'DESICCATION', 'RESTING'],
                 processingBatches: p.processingBatches || [],
                 dryingBatches: p.dryingBatches || [],
                 storedBatches: p.storedBatches || [],
@@ -739,11 +741,9 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
             }
 
             // Auto-Advance Logic
-            const allStages: ProcessingStage[] = ['RECEPTION', 'FLOATING', 'PULPING', 'FERMENTATION', 'DESICCATION', 'RESTING', 'DE_STONING', 'HULLING', 'POLISHING', 'GRADING', 'DENSITY', 'COLOR_SORTING', 'EXPORT_READY'];
-            const isTier1 = project.tier === 'HIGH_COMMERCIAL';
-            const activeStages = isTier1 ? allStages : allStages.filter(s => !['FLOATING', 'PULPING', 'FERMENTATION'].includes(s));
+            const activeStages = project.processingPipeline && project.processingPipeline.length > 0 ? project.processingPipeline : ['RECEPTION', 'FLOATING', 'DESICCATION', 'RESTING'];
             const currentIndex = activeStages.indexOf('FLOATING');
-            const nextStage = currentIndex < activeStages.length - 1 ? activeStages[currentIndex + 1] : 'FLOATING';
+            const nextStage = currentIndex < activeStages.length - 1 && currentIndex !== -1 ? activeStages[currentIndex + 1] : 'FLOATING';
 
             newHistory.push({
                 stage: nextStage,
@@ -915,12 +915,10 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
             });
 
             // Auto-Advance Logic
-            const allStages: ProcessingStage[] = ['RECEPTION', 'FLOATING', 'PULPING', 'FERMENTATION', 'DESICCATION', 'RESTING', 'DE_STONING', 'HULLING', 'POLISHING', 'GRADING', 'DENSITY', 'COLOR_SORTING', 'EXPORT_READY'];
-            const isTier1 = project.tier === 'HIGH_COMMERCIAL';
-            const activeStages = isTier1 ? allStages : allStages.filter(s => !['FLOATING', 'PULPING', 'FERMENTATION'].includes(s));
+            const activeStages = project.processingPipeline && project.processingPipeline.length > 0 ? project.processingPipeline : ['RECEPTION', 'FLOATING', 'DESICCATION', 'RESTING'];
             const lastCompletedStage = stagesArray[stagesArray.length - 1];
             const currentIndex = activeStages.indexOf(lastCompletedStage);
-            const nextStage = currentIndex < activeStages.length - 1 ? activeStages[currentIndex + 1] : lastCompletedStage;
+            const nextStage = currentIndex < activeStages.length - 1 && currentIndex !== -1 ? activeStages[currentIndex + 1] : lastCompletedStage;
 
             if (nextStage !== lastCompletedStage) {
                 updatedHistory.push({
@@ -981,12 +979,10 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
             });
 
             // Tier-Aware Dynamic Routing
-            const allStages: ProcessingStage[] = ['RECEPTION', 'FLOATING', 'PULPING', 'FERMENTATION', 'DESICCATION', 'RESTING', 'DE_STONING', 'HULLING', 'POLISHING', 'GRADING', 'DENSITY', 'COLOR_SORTING', 'EXPORT_READY'];
-            const isTier1 = project.tier === 'HIGH_COMMERCIAL';
-            const activeStages = isTier1 ? allStages : allStages.filter(s => !['FLOATING', 'PULPING', 'FERMENTATION'].includes(s));
+            const activeStages = project.processingPipeline && project.processingPipeline.length > 0 ? project.processingPipeline : ['RECEPTION', 'FLOATING', 'DESICCATION', 'RESTING'];
             const lastCompletedStage = updatedHistory.slice().reverse().find(h => h.endDate)?.stage || batch.currentStage;
             const currentIndex = activeStages.indexOf(lastCompletedStage);
-            const nextStage = currentIndex < activeStages.length - 1 ? activeStages[currentIndex + 1] : lastCompletedStage;
+            const nextStage = currentIndex < activeStages.length - 1 && currentIndex !== -1 ? activeStages[currentIndex + 1] : lastCompletedStage;
 
             if (nextStage !== lastCompletedStage && !updatedHistory.some(h => h.stage === nextStage)) {
                 updatedHistory.push({
@@ -1043,38 +1039,148 @@ const handleOperations = (state: ProjectState, action: ProjectAction): ProjectSt
         }
         case 'ADD_BATCH_MOISTURE_MEASUREMENT': {
             const { projectId, batchId, data } = action.payload;
-            const project = state.projects.find(p => p.id === projectId);
-            if (!project) return state;
-
-            const targetMoisture = project.targetMoisturePercentage || 11.5;
-            const isTargetHit = data.percentage <= targetMoisture;
-
             return updateProjectInState(state, projectId, p => ({
                 ...p,
                 processingBatches: (p.processingBatches || []).map(b => {
                     if (b.id !== batchId) return b;
+                    return { ...b, moistureLogs: [...(b.moistureLogs || []), { ...data, id: crypto.randomUUID() }] };
+                })
+            }));
+        }
+        case 'LOAD_DRYING_BED': {
+            const { projectId, containerIds, dryingBedId, startDate, completedBy } = action.payload;
+            const project = state.projects.find(p => p.id === projectId);
+            if (!project) return state;
 
-                    const newMoistureLogs = [...(b.moistureLogs || []), { ...data, id: crypto.randomUUID() }];
-                    let updatedBatch = { ...b, moistureLogs: newMoistureLogs };
+            const containersToLoad = (state.containers || []).filter(c => containerIds.includes(c.id));
+            const addedWeight = containersToLoad.reduce((sum, c) => sum + c.weight, 0);
 
-                    if (isTargetHit && b.currentStage === 'DESICCATION') {
-                        // Auto-Advance to RESTING
-                        const updatedHistory = [...b.history];
-                        const desiccationIndex = updatedHistory.findIndex(h => h.stage === 'DESICCATION' && !h.endDate);
-                        if (desiccationIndex !== -1) {
-                            updatedHistory[desiccationIndex] = { ...updatedHistory[desiccationIndex], endDate: data.date };
-                        }
-                        updatedHistory.push({ stage: 'RESTING', startDate: data.date });
+            // 1. Snapshot Traceability from the physical containers being poured
+            const newTraceability: { farmerId: string, weightKg: number }[] = [];
+            containersToLoad.forEach(c => {
+                c.contributions.forEach(contrib => {
+                    const existing = newTraceability.find(t => t.farmerId === contrib.farmerId);
+                    if (existing) existing.weightKg += contrib.weight;
+                    else newTraceability.push({ farmerId: contrib.farmerId, weightKg: contrib.weight });
+                });
+            });
 
-                        updatedBatch = {
-                            ...updatedBatch,
-                            currentStage: 'RESTING',
-                            history: updatedHistory,
-                            dryingBedId: undefined // Release the physical bed!
-                        };
+            // 2. Wipe the physical containers back to AVAILABLE
+            const updatedContainers = (state.containers || []).map(c =>
+                containerIds.includes(c.id) ? { ...c, weight: 0, contributions: [], status: 'AVAILABLE' as const } : c
+            );
+
+            // 3. Find if the Bed is already active
+            let updatedBatches = [...project.processingBatches];
+            const existingBatchIndex = updatedBatches.findIndex(b => b.currentStage === 'DESICCATION' && b.dryingBedId === dryingBedId && b.status !== 'COMPLETED');
+
+            if (existingBatchIndex !== -1) {
+                // TOP-UP EXISTING BED
+                const existingBatch = updatedBatches[existingBatchIndex];
+                const mergedSnapshot = [...(existingBatch.traceabilitySnapshot || [])];
+                newTraceability.forEach(nt => {
+                    const existing = mergedSnapshot.find(s => s.farmerId === nt.farmerId);
+                    if (existing) existing.weightKg += nt.weightKg;
+                    else mergedSnapshot.push(nt);
+                });
+
+                updatedBatches[existingBatchIndex] = {
+                    ...existingBatch,
+                    weight: existingBatch.weight + addedWeight,
+                    traceabilitySnapshot: mergedSnapshot
+                };
+            } else {
+                // NEW BED BATCH
+                const d = new Date(startDate);
+                const bed = state.dryingBeds.find(b => b.id === dryingBedId);
+                const newBatchId = `${d.getDay() === 0 ? 7 : d.getDay()}-wk${getWeek(d).toString().padStart(2, '0')}${d.getFullYear().toString().slice(-2)}-${bed?.uniqueNumber || 'BED'}`;
+
+                updatedBatches.push({
+                    id: newBatchId,
+                    projectId,
+                    containerIds: [], // The Bed is the container now
+                    dryingBedId,
+                    currentStage: 'DESICCATION',
+                    status: 'IN_PROGRESS',
+                    weight: addedWeight,
+                    moistureLogs: [],
+                    traceabilitySnapshot: newTraceability,
+                    history: [{ stage: 'DESICCATION', startDate, completedBy }]
+                });
+            }
+
+            return { ...state, containers: updatedContainers, projects: state.projects.map(p => p.id === projectId ? { ...p, processingBatches: updatedBatches } : p) };
+        }
+        case 'POUR_BATCH_TO_BED': {
+            const { projectId, batchId, dryingBedId } = action.payload;
+            const project = state.projects.find(p => p.id === projectId);
+            if (!project) return state;
+
+            const batch = project.processingBatches.find(b => b.id === batchId);
+            if (!batch) return state;
+
+            // 1. Free physical crates
+            const updatedContainers = (state.containers || []).map(c =>
+                (batch.containerIds || []).includes(c.id) ? { ...c, weight: 0, contributions: [], status: 'AVAILABLE' as const } : c
+            );
+
+            // 2. Check if bed is already occupied by another active DESICCATION batch
+            const existingBatchIndex = project.processingBatches.findIndex(b => b.currentStage === 'DESICCATION' && b.dryingBedId === dryingBedId && b.id !== batchId && b.status !== 'COMPLETED');
+
+            let updatedBatches = [...project.processingBatches];
+
+            if (existingBatchIndex !== -1) {
+                // Merge into existing bed batch
+                const existingBatch = updatedBatches[existingBatchIndex];
+                const mergedSnapshot = [...(existingBatch.traceabilitySnapshot || [])];
+                (batch.traceabilitySnapshot || []).forEach(nt => {
+                    const existing = mergedSnapshot.find(s => s.farmerId === nt.farmerId);
+                    if (existing) existing.weightKg += nt.weightKg;
+                    else mergedSnapshot.push({ ...nt });
+                });
+
+                updatedBatches[existingBatchIndex] = {
+                    ...existingBatch,
+                    weight: existingBatch.weight + batch.weight,
+                    traceabilitySnapshot: mergedSnapshot
+                };
+                // Remove the source batch
+                updatedBatches = updatedBatches.filter(b => b.id !== batchId);
+            } else {
+                // Just assign bed to this batch and clear containers
+                updatedBatches = updatedBatches.map(b => b.id === batchId ? { ...b, dryingBedId, containerIds: [] } : b);
+            }
+
+            return { ...state, containers: updatedContainers, projects: state.projects.map(p => p.id === projectId ? { ...p, processingBatches: updatedBatches } : p) };
+        }
+        case 'HARVEST_DRYING_BED': {
+            const { projectId, batchId, driedWeight, bagCount, endDate, completedBy } = action.payload;
+            return updateProjectInState(state, projectId, p => ({
+                ...p,
+                processingBatches: p.processingBatches.map(b => {
+                    if (b.id !== batchId) return b;
+
+                    const updatedHistory = [...b.history];
+                    const desIndex = updatedHistory.findIndex(h => h.stage === 'DESICCATION' && !h.endDate);
+                    if (desIndex !== -1) {
+                        updatedHistory[desIndex] = { ...updatedHistory[desIndex], endDate, completedBy, weightOut: driedWeight };
                     }
 
-                    return updatedBatch;
+                    const activeStages = p.processingPipeline && p.processingPipeline.length > 0 ? p.processingPipeline : ['RECEPTION', 'FLOATING', 'DESICCATION', 'RESTING'];
+                    const currentIndex = activeStages.indexOf('DESICCATION');
+                    const nextStage = currentIndex < activeStages.length - 1 && currentIndex !== -1 ? activeStages[currentIndex + 1] : 'RESTING';
+
+                    updatedHistory.push({ stage: nextStage, startDate: endDate });
+
+                    return {
+                        ...b,
+                        weight: driedWeight, // THE NEW TRUTH
+                        bagCount,
+                        bagWeightKg: bagCount > 0 ? driedWeight / bagCount : 60,
+                        dryingBedId: undefined, // RELEASE THE BED
+                        currentStage: nextStage,
+                        history: updatedHistory
+                    };
                 })
             }));
         }
