@@ -1,4 +1,3 @@
-// ==> src/components/data-entry/ProcessingWorkflow.tsx <==
 import React, { useState, useMemo } from 'react';
 import {
     ClipboardList,
@@ -95,6 +94,9 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
     // New states for the inline Merge Batches panel
     const [isMerging, setIsMerging] = useState(false);
     const [mergeSelectedCrates, setMergeSelectedCrates] = useState<string[]>([]);
+
+    // New state for inline moisture logging
+    const [moistureInputs, setMoistureInputs] = useState<Record<string, string>>({});
 
     // Tier Routing Logic: Skip specific wet stages for Tier 2 and Tier 3
     const activeStageOrder = useMemo(() => {
@@ -200,6 +202,7 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                 completedBy: 'System User'
             }
         });
+
         setIsMerging(false);
         setSelectedBatchIds([]);
         setMergeSelectedCrates([]);
@@ -355,6 +358,7 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                         const selectedMergeCapacity = mergeSelectedCrates.reduce((sum, cid) => {
                             const container = state.containers.find(x => x.id === cid);
                             if (!container) return sum;
+
                             // If it's a source crate, it will be wiped, giving full 48kg space
                             const effectiveWeight = allOldCrateIds.includes(container.id) ? 0 : container.weight;
                             return sum + (48 - effectiveWeight);
@@ -418,12 +422,12 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                             });
                                                         }}
                                                         className={`cursor-pointer rounded-xl border-2 p-3 transition-all relative overflow-hidden group w-48 shrink-0 ${isSelected
-                                                                ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30 shadow-sm'
-                                                                : isSourceCrate
-                                                                    ? 'border-purple-200 dark:border-purple-800/50 hover:border-purple-300 dark:hover:border-purple-700 bg-white dark:bg-gray-900'
-                                                                    : isPartial
-                                                                        ? 'border-amber-400/50 hover:border-amber-400 bg-white dark:bg-gray-900'
-                                                                        : 'border-gray-200 dark:border-gray-700 hover:border-purple-300 dark:hover:border-purple-700 bg-white dark:bg-gray-900'
+                                                            ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30 shadow-sm'
+                                                            : isSourceCrate
+                                                                ? 'border-purple-200 dark:border-purple-800/50 hover:border-purple-300 dark:hover:border-purple-700 bg-white dark:bg-gray-900'
+                                                                : isPartial
+                                                                    ? 'border-amber-400/50 hover:border-amber-400 bg-white dark:bg-gray-900'
+                                                                    : 'border-gray-200 dark:border-gray-700 hover:border-purple-300 dark:hover:border-purple-700 bg-white dark:bg-gray-900'
                                                             }`}
                                                     >
                                                         <div className="flex justify-between items-start mb-2">
@@ -517,6 +521,7 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                 const container = state.containers.find(x => x.id === cid);
                                                 return sum + (container ? 48 - container.weight : 0);
                                             }, 0);
+
                                             const remainingNeeded = Math.max(0, unassignedWeight - selectedCapacity);
 
                                             return (
@@ -578,6 +583,7 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                                     <Button
                                                                         onClick={() => {
                                                                             if (assignmentSelectedCrates.length === 0) return;
+
                                                                             dispatch({
                                                                                 type: 'ASSIGN_CONTAINERS',
                                                                                 payload: {
@@ -586,6 +592,7 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                                                     containerIds: assignmentSelectedCrates
                                                                                 }
                                                                             });
+
                                                                             setAssigningDeliveryId(null);
                                                                             setAssignmentSelectedCrates([]);
                                                                         }}
@@ -620,10 +627,10 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                                                             });
                                                                                         }}
                                                                                         className={`cursor-pointer rounded-xl border-2 p-3 transition-all relative overflow-hidden group w-48 shrink-0 ${isSelected
-                                                                                                ? 'border-brand-blue bg-brand-blue/5 shadow-sm'
-                                                                                                : isPartial
-                                                                                                    ? 'border-amber-400/50 hover:border-amber-400 bg-white dark:bg-gray-900'
-                                                                                                    : 'border-gray-200 dark:border-gray-700 hover:border-brand-blue/50 bg-white dark:bg-gray-900'
+                                                                                            ? 'border-brand-blue bg-brand-blue/5 shadow-sm'
+                                                                                            : isPartial
+                                                                                                ? 'border-amber-400/50 hover:border-amber-400 bg-white dark:bg-gray-900'
+                                                                                                : 'border-gray-200 dark:border-gray-700 hover:border-brand-blue/50 bg-white dark:bg-gray-900'
                                                                                             }`}
                                                                                     >
                                                                                         <div className="flex justify-between items-start mb-2">
@@ -908,21 +915,54 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                                 )}
 
                                                                 {activeStage === 'DESICCATION' && (
-                                                                    <div className="flex flex-col items-end mr-4">
-                                                                        <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase mb-1">Current Moisture</span>
-                                                                        <div className="flex items-center gap-2">
-                                                                            <div className="w-24 h-2 bg-gray-100 dark:bg-gray-900 rounded-full overflow-hidden">
-                                                                                <div
-                                                                                    className={`h-full transition-all ${(batch.moistureLogs[batch.moistureLogs.length - 1]?.percentage || 20) <= 12
-                                                                                        ? 'bg-green-500'
-                                                                                        : 'bg-amber-500'
-                                                                                        }`}
-                                                                                    style={{ width: `${Math.max(0, 100 - ((batch.moistureLogs[batch.moistureLogs.length - 1]?.percentage || 20) - 10) * 10)}%` }}
-                                                                                />
+                                                                    <div className="flex items-center gap-4 mr-4">
+                                                                        <div className="flex flex-col items-end">
+                                                                            <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase mb-1">Current Moisture</span>
+                                                                            <div className="flex items-center gap-2">
+                                                                                <div className="w-24 h-2 bg-gray-100 dark:bg-gray-900 rounded-full overflow-hidden">
+                                                                                    <div
+                                                                                        className={`h-full transition-all ${(batch.moistureLogs[batch.moistureLogs.length - 1]?.percentage || 20) <= (project.targetMoisturePercentage || 11.5) ? 'bg-green-500' : 'bg-amber-500'}`}
+                                                                                        style={{ width: `${Math.max(0, 100 - ((batch.moistureLogs[batch.moistureLogs.length - 1]?.percentage || 20) - 10) * 10)}%` }}
+                                                                                    />
+                                                                                </div>
+                                                                                <span className="text-sm font-black text-brand-dark dark:text-white">
+                                                                                    {batch.moistureLogs[batch.moistureLogs.length - 1]?.percentage || '--'}%
+                                                                                </span>
                                                                             </div>
-                                                                            <span className="text-sm font-black text-brand-dark dark:text-white">
-                                                                                {batch.moistureLogs[batch.moistureLogs.length - 1]?.percentage || '--'}%
-                                                                            </span>
+                                                                        </div>
+                                                                        <div className="flex flex-col items-start border-l border-gray-200 dark:border-gray-700 pl-4">
+                                                                            <span className="text-[10px] font-bold text-brand-blue uppercase mb-1">Log New Reading</span>
+                                                                            <div className="flex items-center gap-2">
+                                                                                <Input
+                                                                                    type="number"
+                                                                                    step="0.1"
+                                                                                    placeholder="e.g. 18.5"
+                                                                                    className="w-24 h-8 text-sm bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700"
+                                                                                    value={moistureInputs[batch.id] || ''}
+                                                                                    onChange={(e) => setMoistureInputs(prev => ({ ...prev, [batch.id]: e.target.value }))}
+                                                                                />
+                                                                                <Button
+                                                                                    size="sm"
+                                                                                    disabled={!moistureInputs[batch.id]}
+                                                                                    onClick={() => {
+                                                                                        dispatch({
+                                                                                            type: 'ADD_BATCH_MOISTURE_MEASUREMENT',
+                                                                                            payload: {
+                                                                                                projectId: project.id,
+                                                                                                batchId: batch.id,
+                                                                                                data: {
+                                                                                                    date: new Date().toISOString().split('T')[0],
+                                                                                                    percentage: parseFloat(moistureInputs[batch.id])
+                                                                                                }
+                                                                                            }
+                                                                                        });
+                                                                                        setMoistureInputs(prev => { const next = { ...prev }; delete next[batch.id]; return next; });
+                                                                                    }}
+                                                                                    className="bg-brand-blue hover:bg-brand-blue/90 h-8 text-xs text-white"
+                                                                                >
+                                                                                    Save
+                                                                                </Button>
+                                                                            </div>
                                                                         </div>
                                                                     </div>
                                                                 )}
@@ -947,7 +987,7 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                                         Log Floating Results
                                                                         {floatingBatchId === batch.id ? <ChevronUp className="w-4 h-4 ml-2" /> : <ChevronDown className="w-4 h-4 ml-2" />}
                                                                     </Button>
-                                                                ) : (
+                                                                ) : activeStage === 'DESICCATION' ? null : (
                                                                     <Button
                                                                         variant="secondary"
                                                                         size="sm"
@@ -1076,7 +1116,19 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                                                 <Input
                                                                                     type="number"
                                                                                     value={floatingSinkerWeight}
-                                                                                    onChange={(e) => setFloatingSinkerWeight(e.target.value)}
+                                                                                    onChange={(e) => {
+                                                                                        const val = e.target.value;
+                                                                                        setFloatingSinkerWeight(val);
+                                                                                        const weightNum = parseFloat(val) || 0;
+                                                                                        if (weightNum > 0) {
+                                                                                            // Calculate crates needed (max 48kg per crate)
+                                                                                            const cratesNeeded = Math.ceil(weightNum / 48);
+                                                                                            // Auto-select from the original basin crates
+                                                                                            setFloatingSinkerCrates(batch.containerIds.slice(0, cratesNeeded));
+                                                                                        } else {
+                                                                                            setFloatingSinkerCrates([]);
+                                                                                        }
+                                                                                    }}
                                                                                     className="bg-white dark:bg-gray-900 border-cyan-200 dark:border-cyan-800 font-bold text-lg"
                                                                                     placeholder="e.g. 200"
                                                                                 />
@@ -1163,7 +1215,7 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                                                             <div className="space-y-1.5 mt-auto pt-2">
                                                                                                 <div className="flex justify-between text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400">
                                                                                                     <span className={isPartial ? 'text-amber-500' : isBasin ? 'text-cyan-600 dark:text-cyan-400' : ''}>
-                                                                                                        {isPartial ? 'Partial Fill' : isBasin ? 'To Be Emptied' : 'Empty'}
+                                                                                                        {isPartial ? 'Partial Fill' : isBasin ? 'Emptied' : 'Empty'}
                                                                                                     </span>
                                                                                                     <span className={isSelected ? 'text-cyan-600 dark:text-cyan-400' : 'text-gray-900 dark:text-white'}>{availableSpace.toFixed(1)}kg free</span>
                                                                                                 </div>
@@ -1213,7 +1265,7 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                                                                 <div className="space-y-1.5 mt-auto pt-2">
                                                                                                     <div className="flex justify-between text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400">
                                                                                                         <span className={isPartial ? 'text-amber-500' : isBasin ? 'text-orange-500' : ''}>
-                                                                                                            {isPartial ? 'Partial Fill' : isBasin ? 'To Be Emptied' : 'Empty'}
+                                                                                                            {isPartial ? 'Partial Fill' : isBasin ? 'Emptied' : 'Empty'}
                                                                                                         </span>
                                                                                                         <span className={isSelected ? 'text-brand-red dark:text-red-400' : 'text-gray-900 dark:text-white'}>{availableSpace.toFixed(1)}kg free</span>
                                                                                                     </div>

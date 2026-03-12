@@ -1,6 +1,5 @@
 // ==> src/types.ts <==
 export type Currency = 'USD' | 'UGX' | 'EUR';
-
 export type Permission =
     | 'VIEW_DASHBOARD_FINANCE'
     | 'VIEW_DASHBOARD_OPS'
@@ -251,7 +250,6 @@ export interface ProcessingBatch {
     isRemainder?: boolean;
     consumedByBatchId?: string;
     sourceProjectId?: string;
-
     // EUDR
     costBasisUSD?: number;
     traceabilitySnapshot?: { farmerId: string, weightKg: number }[];
@@ -298,7 +296,6 @@ export interface Sale {
     // Logistics
     incoterm?: string; // FOB, CIF, etc.
     logisticsCosts: LogisticsCost[];
-
     // Payment Schedule
     installments: PaymentInstallment[];
 
@@ -346,20 +343,17 @@ export interface ClientDetails {
     generalEmail: string;
     generalPhone: string;
     generalMobile: string;
-
     // Finance Contact
     financeName: string;
     financeTitle: string;
     financeEmail: string;
     financePhone: string;
     financeMobile: string;
-
     // Registration & Tax
     vatNo: string;
     companyRegNo: string;
     eoriOrEinType: string;
     eoriOrEinValue: string;
-
     // Banking Info
     bankName: string;
     accountName: string;
@@ -376,7 +370,6 @@ export interface ClientDetails {
     requestedPaymentTerms: string;
     debtorNoScope: string;
     creditorNoScope: string;
-
     // Internal Checklist
     poa: boolean;
     scope: boolean;
@@ -452,10 +445,8 @@ export interface Project {
     setupCosts: ProjectSetupCost[];
     advances: Advance[];
     deliveries: Delivery[];
-
     // NEW UNIFIED STATE MACHINE
     processingBatches: ProcessingBatch[];
-
     // LEGACY ARRAYS (kept for compatibility during transition if needed, but we should migrate)
     dryingBatches: DryingBatch[];
     storedBatches: StoredBatch[];
@@ -577,7 +568,6 @@ type ApproveContainerLoadingAction = { type: 'APPROVE_CONTAINER_LOADING'; payloa
 type SetOutsourcedCostAction = { type: 'SET_OUTSOURCED_COST'; payload: { projectId: string; batchId: string; stage: ProcessingStage; cost: number } };
 type AddBatchMoistureMeasurementAction = { type: 'ADD_BATCH_MOISTURE_MEASUREMENT'; payload: { projectId: string; batchId: string; data: Omit<MoistureMeasurement, 'id'> } };
 type UpdateBatchCuppingScoreAction = { type: 'UPDATE_BATCH_CUPPING_SCORE'; payload: { projectId: string; batchId: string; score: number } };
-
 type CompleteFloatingAction = {
     type: 'COMPLETE_FLOATING';
     payload: {
@@ -591,7 +581,6 @@ type CompleteFloatingAction = {
         endDate: string;
     }
 };
-
 type MergeBatchesAction = {
     type: 'MERGE_BATCHES';
     payload: {
@@ -608,7 +597,6 @@ type PublishBuyingPricesAction = { type: 'PUBLISH_BUYING_PRICES'; payload: { dat
 type AddPaymentLineAction = { type: 'ADD_PAYMENT_LINE'; payload: { data: Omit<PaymentLine, 'id'> } };
 type UpdatePaymentLineStatusAction = { type: 'UPDATE_PAYMENT_LINE_STATUS'; payload: { paymentLineId: string; status: PaymentStatus; authCode?: string } };
 type UpdateGlobalSettingsAction = { type: 'UPDATE_GLOBAL_SETTINGS'; payload: { updates: Partial<GlobalSettings> } };
-
 type ApprovePaymentAccountantAction = { type: 'APPROVE_PAYMENT_ACCOUNTANT'; payload: { paymentLineId: string } };
 type ApprovePaymentDirectorAction = { type: 'APPROVE_PAYMENT_DIRECTOR'; payload: { paymentLineId: string; authCode: string } };
 type ExecutePaymentAction = { type: 'EXECUTE_PAYMENT'; payload: { paymentLineId: string; paymentMethod: string } };
@@ -640,7 +628,6 @@ type CompleteHullingAction = {
         mergeRemainderBatchIds?: string[];
     }
 };
-
 type MoveBatchStockAction = {
     type: 'MOVE_BATCH_STOCK';
     payload: {
@@ -665,7 +652,6 @@ type AddSaleAction = {
         }
     }
 };
-
 type TransferStockAction = { type: 'TRANSFER_STOCK'; payload: { sourceProjectId: string; targetProjectId: string; batchId: string; weight: number; date: string } };
 type UpdateEntryDateAction = { type: 'UPDATE_ENTRY_DATE', payload: { projectId: string, type: ActivityLogEntryType, id: string, newDate: string } };
 type BulkUpdateEntryDatesAction = { type: 'BULK_UPDATE_ENTRY_DATES', payload: { updates: { projectId: string; type: ActivityLogEntryType; id: string; newDate: string }[] } };
@@ -673,6 +659,11 @@ type RecalculateUsdValuesAction = { type: 'RECALCULATE_USD_VALUES', payload: { p
 type SaveForecastSnapshotAction = { type: 'SAVE_FORECAST_SNAPSHOT'; payload: { projectId: string; snapshot: ForecastSnapshot } };
 type DeleteForecastSnapshotAction = { type: 'DELETE_FORECAST_SNAPSHOT'; payload: { projectId: string; snapshotId: string } };
 type UpdateGlobalCurrencyAction = { type: 'UPDATE_GLOBAL_CURRENCY'; payload: { currency: Currency } };
+
+type DeleteLogEntryAction = {
+    type: 'DELETE_LOG_ENTRY';
+    payload: { projectId: string; type: ActivityLogEntryType; id: string; }
+};
 
 export type ProjectAction =
     | AddProjectAction
@@ -751,4 +742,5 @@ export type ProjectAction =
     | SaveForecastSnapshotAction
     | DeleteForecastSnapshotAction
     | UpdateGlobalCurrencyAction
-    | RecalculateUsdValuesAction;
+    | RecalculateUsdValuesAction
+    | DeleteLogEntryAction;
