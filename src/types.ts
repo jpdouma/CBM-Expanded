@@ -1,5 +1,6 @@
 // ==> src/types.ts <==
 export type Currency = 'USD' | 'UGX' | 'EUR';
+
 export type Permission =
     | 'VIEW_DASHBOARD_FINANCE'
     | 'VIEW_DASHBOARD_OPS'
@@ -227,7 +228,7 @@ export interface ProcessingStepLog {
 export interface ProcessingBatch {
     id: string;
     projectId: string;
-    containerIds: string[]; // 5 containers for a bed load
+    containerIds: string[];
     dryingBedId?: string;
     currentStage: ProcessingStage;
     status: BatchStatus;
@@ -235,12 +236,17 @@ export interface ProcessingBatch {
     moistureLogs: MoistureMeasurement[];
     cuppingScore?: number;
     history: ProcessingStepLog[];
+
+    // Sprint 24: Bed Lock
+    isLocked?: boolean;
+
     // Logistics / Inventory
     warehouseLocation?: string;
     storageZone?: string;
     storageRow?: string;
     palletId?: string;
     palletLevel?: string;
+    putAwayDate?: string;
 
     bagWeightKg?: number;
     bagCount?: number;
@@ -250,6 +256,7 @@ export interface ProcessingBatch {
     isRemainder?: boolean;
     consumedByBatchId?: string;
     sourceProjectId?: string;
+
     // EUDR
     costBasisUSD?: number;
     traceabilitySnapshot?: { farmerId: string, weightKg: number }[];
@@ -296,6 +303,7 @@ export interface Sale {
     // Logistics
     incoterm?: string; // FOB, CIF, etc.
     logisticsCosts: LogisticsCost[];
+
     // Payment Schedule
     installments: PaymentInstallment[];
 
@@ -343,17 +351,20 @@ export interface ClientDetails {
     generalEmail: string;
     generalPhone: string;
     generalMobile: string;
+
     // Finance Contact
     financeName: string;
     financeTitle: string;
     financeEmail: string;
     financePhone: string;
     financeMobile: string;
+
     // Registration & Tax
     vatNo: string;
     companyRegNo: string;
     eoriOrEinType: string;
     eoriOrEinValue: string;
+
     // Banking Info
     bankName: string;
     accountName: string;
@@ -370,6 +381,7 @@ export interface ClientDetails {
     requestedPaymentTerms: string;
     debtorNoScope: string;
     creditorNoScope: string;
+
     // Internal Checklist
     poa: boolean;
     scope: boolean;
@@ -571,6 +583,8 @@ type ApproveContainerLoadingAction = { type: 'APPROVE_CONTAINER_LOADING'; payloa
 type SetOutsourcedCostAction = { type: 'SET_OUTSOURCED_COST'; payload: { projectId: string; batchId: string; stage: ProcessingStage; cost: number } };
 type AddBatchMoistureMeasurementAction = { type: 'ADD_BATCH_MOISTURE_MEASUREMENT'; payload: { projectId: string; batchId: string; data: Omit<MoistureMeasurement, 'id'> } };
 type UpdateBatchCuppingScoreAction = { type: 'UPDATE_BATCH_CUPPING_SCORE'; payload: { projectId: string; batchId: string; score: number } };
+type ToggleBatchLockAction = { type: 'TOGGLE_BATCH_LOCK'; payload: { projectId: string; batchId: string; } }; // Sprint 24
+
 type CompleteFloatingAction = {
     type: 'COMPLETE_FLOATING';
     payload: {
@@ -584,6 +598,7 @@ type CompleteFloatingAction = {
         endDate: string;
     }
 };
+
 type MergeBatchesAction = {
     type: 'MERGE_BATCHES';
     payload: {
@@ -595,11 +610,23 @@ type MergeBatchesAction = {
     }
 };
 
+type PutAwayBatchAction = {
+    type: 'PUT_AWAY_BATCH';
+    payload: {
+        projectId: string;
+        batchId: string;
+        putAwayDate: string;
+        mainLocation: { facility: string, zone: string, row: string, pallet: string, level: string };
+        remainderLocation?: { facility: string, zone: string, row: string, pallet: string, level: string };
+    }
+};
+
 // NEW PRICING & PAYMENT ACTIONS
 type PublishBuyingPricesAction = { type: 'PUBLISH_BUYING_PRICES'; payload: { data: Omit<BuyingPrices, 'id'>; id?: string } };
 type AddPaymentLineAction = { type: 'ADD_PAYMENT_LINE'; payload: { data: Omit<PaymentLine, 'id'> } };
 type UpdatePaymentLineStatusAction = { type: 'UPDATE_PAYMENT_LINE_STATUS'; payload: { paymentLineId: string; status: PaymentStatus; authCode?: string } };
 type UpdateGlobalSettingsAction = { type: 'UPDATE_GLOBAL_SETTINGS'; payload: { updates: Partial<GlobalSettings> } };
+
 type ApprovePaymentAccountantAction = { type: 'APPROVE_PAYMENT_ACCOUNTANT'; payload: { paymentLineId: string } };
 type ApprovePaymentDirectorAction = { type: 'APPROVE_PAYMENT_DIRECTOR'; payload: { paymentLineId: string; authCode: string } };
 type ExecutePaymentAction = { type: 'EXECUTE_PAYMENT'; payload: { paymentLineId: string; paymentMethod: string } };
@@ -631,6 +658,7 @@ type CompleteHullingAction = {
         mergeRemainderBatchIds?: string[];
     }
 };
+
 type MoveBatchStockAction = {
     type: 'MOVE_BATCH_STOCK';
     payload: {
@@ -655,19 +683,18 @@ type AddSaleAction = {
         }
     }
 };
+
 type TransferStockAction = { type: 'TRANSFER_STOCK'; payload: { sourceProjectId: string; targetProjectId: string; batchId: string; weight: number; date: string } };
 type UpdateEntryDateAction = { type: 'UPDATE_ENTRY_DATE', payload: { projectId: string, type: ActivityLogEntryType, id: string, newDate: string } };
 type BulkUpdateEntryDatesAction = { type: 'BULK_UPDATE_ENTRY_DATES', payload: { updates: { projectId: string; type: ActivityLogEntryType; id: string; newDate: string }[] } };
+type RecalculateUsdValuesAction = { type: 'RECALCULATE_USD_VALUES', payload: { progressCallback: (progress: number) => void } };
 type SaveForecastSnapshotAction = { type: 'SAVE_FORECAST_SNAPSHOT'; payload: { projectId: string; snapshot: ForecastSnapshot } };
 type DeleteForecastSnapshotAction = { type: 'DELETE_FORECAST_SNAPSHOT'; payload: { projectId: string; snapshotId: string } };
 type UpdateGlobalCurrencyAction = { type: 'UPDATE_GLOBAL_CURRENCY'; payload: { currency: Currency } };
-type RecalculateUsdValuesAction = { type: 'RECALCULATE_USD_VALUES', payload: { progressCallback: (progress: number) => void } };
-
 type DeleteLogEntryAction = {
     type: 'DELETE_LOG_ENTRY';
     payload: { projectId: string; type: ActivityLogEntryType; id: string; }
 };
-
 type LoadDryingBedAction = {
     type: 'LOAD_DRYING_BED';
     payload: { projectId: string; containerIds: string[]; dryingBedId: string; startDate: string; completedBy: string; }
@@ -764,4 +791,6 @@ export type ProjectAction =
     | DeleteLogEntryAction
     | LoadDryingBedAction
     | HarvestDryingBedAction
-    | PourBatchToBedAction;
+    | PourBatchToBedAction
+    | PutAwayBatchAction
+    | ToggleBatchLockAction;
