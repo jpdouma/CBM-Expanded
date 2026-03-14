@@ -1,6 +1,10 @@
+// ==> src/components/Icons.tsx <==
 import React from 'react';
 
-export type IconName = 'coffeeBean' | 'plus' | 'chevronDown' | 'upload' | 'download' | 'printer' | 'trash' | 'check' | 'money' | 'truck' | 'sun' | 'moon' | 'droplet' | 'archiveBox' | 'cog' | 'wrenchScrewdriver' | 'refresh' | 'pencil' | 'xMark' | 'arrowDown' | 'arrowUp' | 'chartBar' | 'switchHorizontal' | 'documentText' | 'arrowLeft' | 'informationCircle' | 'beaker' | 'user' | 'envelope' | 'shieldCheck' | 'clipboard' | 'documentDuplicate';
+export type IconName = 'coffeeBean' | 'plus' | 'chevronDown' | 'chevronUp' | 'upload' |
+  'download' | 'printer' | 'trash' | 'check' | 'money' | 'truck' | 'sun' | 'moon' | 'droplet' | 'archiveBox' |
+  'cog' | 'wrenchScrewdriver' | 'refresh' | 'pencil' | 'xMark' | 'arrowDown' | 'arrowUp' | 'chartBar' | 'switchHorizontal' | 'documentText' |
+  'arrowLeft' | 'informationCircle' | 'beaker' | 'user' | 'envelope' | 'shieldCheck' | 'clipboard' | 'documentDuplicate';
 
 interface IconProps extends React.SVGProps<SVGSVGElement> {
   name: IconName;
@@ -17,6 +21,7 @@ const ICONS: Record<IconName, React.ReactNode> = {
   ),
   plus: <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />,
   chevronDown: <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />,
+  chevronUp: <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 15.75 7.5-7.5 7.5 7.5" />,
   upload: <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />,
   download: <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />,
   printer: <path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0 1 10.56 0m-10.56 0L6 18.25m0 0a2.25 2.25 0 0 0 2.25 2.25h8.5A2.25 2.25 0 0 0 19 18.25m-13 0-1.41-1.41a2.25 2.25 0 0 1 0-3.182l5.66-5.66a2.25 2.25 0 0 1 3.182 0l5.66 5.66a2.25 2.25 0 0 1 0 3.182l-1.41 1.41M6 18.25h.008v.008H6v-.008Zm12 0h.008v.008H18v-.008Zm-7.5-11.25h.008v.008h-.008V7Z" />,
@@ -59,7 +64,7 @@ const ICONS: Record<IconName, React.ReactNode> = {
 };
 
 export const Icon: React.FC<IconProps> = ({ name, title, className = "w-6 h-6", ...props }) => {
-  const isStroked = !['coffeeBean'].includes(name); // Example if some icons are filled
+  const isStroked = !['coffeeBean'].includes(name);
 
   return (
     <svg

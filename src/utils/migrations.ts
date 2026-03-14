@@ -9,6 +9,7 @@ export const migrateLegacyState = (parsedState: any): ProjectState => {
     globalFarmers.forEach(f => globalFarmerMap.set(f.id, f));
 
     const projectsToProcess = parsedState.projects || [];
+
     // If global farmers list is empty but projects have farmers, lift them up
     projectsToProcess.forEach((p: any) => {
         if (p.farmers && Array.isArray(p.farmers)) {
@@ -90,7 +91,8 @@ export const migrateLegacyState = (parsedState: any): ProjectState => {
         facilityCode: sl.facilityCode || (sl.name ? sl.name.substring(0, 3).toUpperCase() : 'UNK'),
         allowedZones: sl.allowedZones || [],
         allowedRows: sl.allowedRows || [],
-        allowedPallets: sl.allowedPallets || []
+        allowedPallets: sl.allowedPallets || [],
+        allowedLevels: sl.allowedLevels || ['A', 'B', 'C']
     }));
 
     // 4. Migrate Users (convert role to roleId)
@@ -111,6 +113,7 @@ export const migrateLegacyState = (parsedState: any): ProjectState => {
         clients,
         financiers: parsedState.financiers || [],
         dryingBeds: parsedState.dryingBeds || [],
+        floatingTanks: parsedState.floatingTanks || [],
         selectedProjectIds: parsedState.selectedProjectIds || [],
         storageLocations,
         farmers: finalFarmers,

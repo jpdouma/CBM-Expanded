@@ -8,6 +8,7 @@ const initialState: ProjectState = {
     projects: [],
     selectedProjectIds: [],
     dryingBeds: [],
+    floatingTanks: [],
     clients: [],
     financiers: [],
     storageLocations: [],

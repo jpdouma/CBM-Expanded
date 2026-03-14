@@ -9,7 +9,7 @@ import { useTheme } from '../context/ThemeProvider';
 import { useProjects } from '../context/ProjectProvider';
 
 interface AppHeaderProps {
-    activeSetting: 'hub' | 'dryingBeds' | 'clients' | 'financiers' | 'storageLocations' | 'farmers' | 'users' | 'roles' | 'costing' | 'pricing' | 'containers' | null;
+    activeSetting: 'hub' | 'dryingBeds' | 'floatingTanks' | 'clients' | 'financiers' | 'storageLocations' | 'farmers' | 'users' | 'roles' | 'costing' | 'pricing' | 'containers' | null;
     onSettingsClick: () => void;
     onActivityLogClick: () => void;
     onImport: () => void;
@@ -49,7 +49,6 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
 
     // GHOST ID FIX: Filter out IDs that no longer exist in the projects array
     const validSelectedIds = selectedProjectIds.filter(id => projects.some(p => p.id === id));
-
     // Local draft state for the "Draft & Confirm" pattern
     const [draftSelectedIds, setDraftSelectedIds] = useState<string[]>([]);
 

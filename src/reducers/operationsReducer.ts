@@ -816,7 +816,7 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
                         ...container,
                         contributions: keptContributions,
                         weight: newWeight,
-                        status: newWeight > 0 ? 'IN_USE' : 'AVAILABLE'
+                        status: (newWeight > 0 ? 'IN_USE' : 'AVAILABLE') as 'IN_USE' | 'AVAILABLE'
                     };
                 }
                 return container;

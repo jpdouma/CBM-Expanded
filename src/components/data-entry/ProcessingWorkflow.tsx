@@ -169,16 +169,14 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
 
     const handleConfirmFloating = (
         batchId: string,
-        sinkerReadings: { containerId: string, netWeight: number }[],
-        floaterReadings: { containerId: string, netWeight: number }[]
+        sinkerReadings?: any[],
+        floaterReadings?: any[]
     ) => {
         dispatch({
             type: 'COMPLETE_FLOATING',
             payload: {
                 projectId: project.id,
                 batchId,
-                sinkerReadings,
-                floaterReadings,
                 completedBy: 'System User',
                 endDate: new Date().toISOString().split('T')[0]
             }

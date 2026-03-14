@@ -15,7 +15,8 @@ import {
     MoreHorizontal,
     Container as ContainerIcon,
     Sparkles,
-    Hammer
+    Hammer,
+    ArrowRight
 } from 'lucide-react';
 import { useProjects } from '../../../context/ProjectProvider';
 import { usePermissions } from '../../../hooks/usePermissions';
