@@ -187,6 +187,8 @@ export interface ProcessingBatch {
     id: string;
     projectId: string;
     containerIds: string[];
+    sinkerContainerIds?: string[];
+    floaterContainerIds?: string[];
     dryingBedId?: string;
     floatingTankId?: string;
     currentStage: ProcessingStage;
@@ -206,7 +208,6 @@ export interface ProcessingBatch {
     palletId?: string;
     palletLevel?: string;
     putAwayDate?: string;
-
     bagWeightKg?: number;
     bagCount?: number;
 
@@ -504,7 +505,8 @@ type DeleteClientAction = { type: 'DELETE_CLIENT', payload: { clientId: string }
 type AddStorageLocationAction = { type: 'ADD_STORAGE_LOCATION', payload: { locationData: Omit<StorageLocation, 'id'> } };
 type UpdateStorageLocationAction = { type: 'UPDATE_STORAGE_LOCATION', payload: { locationId: string, updates: Partial<Omit<StorageLocation, 'id'>> } };
 type DeleteStorageLocationAction = { type: 'DELETE_STORAGE_LOCATION', payload: { locationId: string } };
-type GenerateContainersAction = { type: 'GENERATE_CONTAINERS'; payload: { count: number; date: string } };
+
+type GenerateContainersAction = { type: 'GENERATE_CONTAINERS'; payload: { count: number; date: string; tareWeightKg: number } };
 type DeleteContainerAction = { type: 'DELETE_CONTAINER'; payload: { containerId: string } };
 
 // Farmer Management Actions
@@ -548,12 +550,19 @@ type CompleteFloatingAction = {
     payload: {
         projectId: string;
         batchId: string;
-        sinkerWeight: number;
-        floaterWeight: number;
-        sinkerContainerIds: string[];
-        floaterContainerIds: string[];
         completedBy: string;
         endDate: string;
+    }
+};
+
+type LogFloatingContainerAction = {
+    type: 'LOG_FLOATING_CONTAINER';
+    payload: {
+        projectId: string;
+        batchId: string;
+        containerId: string;
+        netWeight: number;
+        type: 'sinker' | 'floater';
     }
 };
 
@@ -609,10 +618,12 @@ type RecalculateUsdValuesAction = { type: 'RECALCULATE_USD_VALUES', payload: { p
 type SaveForecastSnapshotAction = { type: 'SAVE_FORECAST_SNAPSHOT'; payload: { projectId: string; snapshot: ForecastSnapshot } };
 type DeleteForecastSnapshotAction = { type: 'DELETE_FORECAST_SNAPSHOT'; payload: { projectId: string; snapshotId: string } };
 type UpdateGlobalCurrencyAction = { type: 'UPDATE_GLOBAL_CURRENCY'; payload: { currency: Currency } };
+
 type DeleteLogEntryAction = {
     type: 'DELETE_LOG_ENTRY';
     payload: { projectId: string; type: ActivityLogEntryType; id: string; }
 };
+
 type LoadDryingBedAction = {
     type: 'LOAD_DRYING_BED';
     payload: { projectId: string; containerIds: string[]; dryingBedId: string; startDate: string; completedBy: string; }
@@ -694,6 +705,7 @@ export type ProjectAction =
     | AddBatchMoistureMeasurementAction
     | UpdateBatchCuppingScoreAction
     | CompleteFloatingAction
+    | LogFloatingContainerAction
     | MergeBatchesAction
     | PublishBuyingPricesAction
     | AddPaymentLineAction

@@ -102,7 +102,7 @@ export const masterDataReducer = (state: ProjectState, action: any): ProjectStat
                 )
             };
         case 'GENERATE_CONTAINERS': {
-            const { count, date } = action.payload;
+            const { count, date, tareWeightKg } = action.payload;
             const d = new Date(date);
             const month = (d.getMonth() + 1).toString().padStart(2, '0');
             const year = d.getFullYear().toString();
@@ -125,6 +125,7 @@ export const masterDataReducer = (state: ProjectState, action: any): ProjectStat
                     id: crypto.randomUUID(),
                     label: `${prefix}-${counter.toString().padStart(3, '0')}`,
                     weight: 0,
+                    tareWeightKg: tareWeightKg || 1.5,
                     contributions: [],
                     date: date,
                     status: 'AVAILABLE' as const
@@ -225,6 +226,7 @@ export const masterDataReducer = (state: ProjectState, action: any): ProjectStat
                 name: newName,
                 isSystem: false
             };
+
             return { ...state, roles: [...(state.roles || []), clonedRole] };
         }
         case 'DELETE_ROLE':
@@ -240,7 +242,6 @@ export const masterDataReducer = (state: ProjectState, action: any): ProjectStat
                 ...state,
                 globalSettings: { ...(state.globalSettings || { processingCosts: [] }), ...action.payload.updates }
             };
-
         case 'PUBLISH_BUYING_PRICES':
             return {
                 ...state,

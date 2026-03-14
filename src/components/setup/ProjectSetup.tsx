@@ -10,6 +10,7 @@ import { FinancialProjection } from '../dashboard/FinancialProjection';
 
 interface ProjectSetupProps {
     project: Project;
+    isFocusMode?: boolean;
 }
 
 type SetupTab = 'details' | 'client' | 'financing' | 'projection';
@@ -24,7 +25,7 @@ const TabButton: React.FC<{ tabId: SetupTab, activeTab: SetupTab, setActiveTab: 
         </button>
     );
 
-export const ProjectSetup: React.FC<ProjectSetupProps> = ({ project }) => {
+export const ProjectSetup: React.FC<ProjectSetupProps> = ({ project, isFocusMode }) => {
     const { state, dispatch } = useProjects();
     const { currentUser } = useAuth();
     const { clients = [], financiers = [] } = state;
@@ -44,7 +45,7 @@ export const ProjectSetup: React.FC<ProjectSetupProps> = ({ project }) => {
 
     return (
         <div className="space-y-6">
-            <div className="flex justify-between items-center">
+            <div className={`flex justify-between items-center ${isFocusMode ? 'hidden' : ''}`}>
                 <h2 className="text-2xl font-bold text-white">Project Setup: {project.name}</h2>
             </div>
 

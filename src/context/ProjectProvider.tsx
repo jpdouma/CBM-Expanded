@@ -43,6 +43,18 @@ const initialState: ProjectState = {
     containers: [],
 };
 
+const getPersistedState = (): ProjectState => {
+    try {
+        const saved = localStorage.getItem('cherry_erp_local_state');
+        if (saved) {
+            return JSON.parse(saved);
+        }
+    } catch (e) {
+        console.error("Failed to load state from local storage", e);
+    }
+    return initialState;
+};
+
 interface ProjectContextType {
     state: ProjectState;
     dispatch: React.Dispatch<ProjectAction>;
@@ -52,11 +64,12 @@ interface ProjectContextType {
 const ProjectContext = createContext<ProjectContextType | undefined>(undefined);
 
 export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [state, reactDispatch] = useReducer(projectReducer, initialState);
+    const [state, reactDispatch] = useReducer(projectReducer, getPersistedState());
     const [isSyncing, setIsSyncing] = useState(false);
 
     // Maintain a mutable ref of the state for synchronous access during dispatch wrapping
     const stateRef = useRef(state);
+
     useEffect(() => {
         stateRef.current = state;
     }, [state]);
@@ -135,6 +148,9 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
             // C. Calculate the exact new state synchronously to determine diffs
             const nextState = projectReducer(stateRef.current, action);
 
+            // D. Local-First Persistence
+            localStorage.setItem('cherry_erp_local_state', JSON.stringify(nextState));
+
             // Diff 1: Projects Collection
             if (nextState.projects !== stateRef.current.projects) {
                 const currentProjects = stateRef.current.projects;
@@ -177,7 +193,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
         } catch (error) {
             console.error("Granular Firebase Sync Write Error:", error);
-            alert("Failed to sync to the cloud. Please check your connection.");
+            // alert("Failed to sync to the cloud. Please check your connection.");
         } finally {
             setIsSyncing(false);
         }

@@ -16,7 +16,6 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
             const project = state.projects.find(p => p.id === action.payload.projectId);
             const delivery = project?.deliveries.find(d => d.id === deliveryId);
             if (!delivery) return state;
-
             let updatedContainers = [...(state.containers || [])];
 
             const alreadyAssigned = updatedContainers.flatMap(c => c.contributions).filter(c => c.deliveryId === deliveryId).reduce((sum, c) => sum + c.weight, 0);
@@ -47,8 +46,8 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
             const project = state.projects.find(p => p.id === projectId);
             if (!project) return state;
 
-            if (containerIds.length === 0 || containerIds.length > 32) {
-                alert("Please select between 1 and 32 containers to start a batch.");
+            if (containerIds.length === 0) {
+                alert("Please select at least 1 container to start a batch.");
                 return state;
             }
 
@@ -63,13 +62,11 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
                     else traceabilitySnapshot.push({ farmerId: contrib.farmerId, weightKg: contrib.weight });
                 });
             });
-
             const updatedContainers = (state.containers || []).map(c =>
                 containerIds.includes(c.id)
                     ? { ...c, weight: 0, contributions: [], status: 'AVAILABLE' as const }
                     : c
             );
-
             // Phase 2: Re-written newBatchId logic for Wet Mill Physics
             const d = new Date(startDate);
             const month = (d.getMonth() + 1).toString().padStart(2, '0');
@@ -91,6 +88,8 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
                 id: newBatchId,
                 projectId: project.id,
                 containerIds,
+                sinkerContainerIds: [],
+                floaterContainerIds: [],
                 dryingBedId: initialStage === 'DESICCATION' ? dryingBedId : undefined,
                 floatingTankId: initialStage === 'FLOATING' ? floatingTankId : undefined,
                 currentStage: initialStage,
@@ -100,10 +99,66 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
                 traceabilitySnapshot,
                 history: [{ stage: initialStage, startDate }]
             };
-
             const updatedProject = {
                 ...project,
                 processingBatches: [...(project.processingBatches || []), newBatch]
+            };
+            return {
+                ...state,
+                containers: updatedContainers,
+                projects: state.projects.map(p => p.id === projectId ? updatedProject : p)
+            };
+        }
+        case 'LOG_FLOATING_CONTAINER': {
+            const { projectId, batchId, containerId, netWeight, type } = action.payload;
+            const project = state.projects.find(p => p.id === projectId);
+            if (!project) return state;
+            const batch = (project.processingBatches || []).find(b => b.id === batchId);
+            if (!batch) return state;
+
+            const originalBatchWeight = batch.weight;
+            const originalSnapshot = batch.traceabilitySnapshot || [];
+            const farmerRatios = originalBatchWeight > 0
+                ? originalSnapshot.map(s => ({ farmerId: s.farmerId, ratio: s.weightKg / originalBatchWeight }))
+                : [];
+
+            let updatedContainers = [...(state.containers || [])];
+            const cIndex = updatedContainers.findIndex(c => c.id === containerId);
+            if (cIndex > -1) {
+                const containerContributions = farmerRatios.map(r => ({
+                    farmerId: r.farmerId,
+                    deliveryId: batchId,
+                    weight: r.ratio * netWeight
+                }));
+
+                updatedContainers[cIndex] = {
+                    ...updatedContainers[cIndex],
+                    status: type === 'sinker' ? 'IN_USE' : 'QUARANTINED',
+                    weight: netWeight,
+                    contributions: containerContributions
+                };
+            }
+
+            const updatedSinkerIds = new Set(batch.sinkerContainerIds || []);
+            const updatedFloaterIds = new Set(batch.floaterContainerIds || []);
+
+            if (type === 'sinker') {
+                updatedSinkerIds.add(containerId);
+                updatedFloaterIds.delete(containerId);
+            } else {
+                updatedFloaterIds.add(containerId);
+                updatedSinkerIds.delete(containerId);
+            }
+
+            const updatedBatch = {
+                ...batch,
+                sinkerContainerIds: Array.from(updatedSinkerIds),
+                floaterContainerIds: Array.from(updatedFloaterIds)
+            };
+
+            const updatedProject = {
+                ...project,
+                processingBatches: project.processingBatches.map(b => b.id === batchId ? updatedBatch : b)
             };
 
             return {
@@ -113,65 +168,31 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
             };
         }
         case 'COMPLETE_FLOATING': {
-            // Phase 3: Expecting explicit individual reading arrays
-            const { projectId, batchId, sinkerReadings, floaterReadings, completedBy, endDate } = action.payload;
+            const { projectId, batchId, completedBy, endDate } = action.payload;
             const project = state.projects.find(p => p.id === projectId);
             if (!project) return state;
-
             const batch = (project.processingBatches || []).find(b => b.id === batchId);
             if (!batch) return state;
 
-            // Calculate totals from net weights
-            const sinkerWeight = sinkerReadings.reduce((sum: number, r: any) => sum + r.netWeight, 0);
-            const floaterWeight = floaterReadings.reduce((sum: number, r: any) => sum + r.netWeight, 0);
+            const sinkerContainerIds = batch.sinkerContainerIds || [];
+            const floaterContainerIds = batch.floaterContainerIds || [];
+
+            const sinkerWeight = (state.containers || [])
+                .filter(c => sinkerContainerIds.includes(c.id))
+                .reduce((sum, c) => sum + c.weight, 0);
+
+            const floaterWeight = (state.containers || [])
+                .filter(c => floaterContainerIds.includes(c.id))
+                .reduce((sum, c) => sum + c.weight, 0);
 
             const originalBatchWeight = batch.weight;
             const sinkerRatio = originalBatchWeight > 0 ? sinkerWeight / originalBatchWeight : 0;
 
             const originalSnapshot = batch.traceabilitySnapshot || [];
-
-            const farmerRatios = originalBatchWeight > 0
-                ? originalSnapshot.map(s => ({ farmerId: s.farmerId, ratio: s.weightKg / originalBatchWeight }))
-                : [];
-
             const newSinkerSnapshot = originalSnapshot.map(entry => ({
                 farmerId: entry.farmerId,
                 weightKg: entry.weightKg * sinkerRatio
             }));
-
-            // Reset origin basin containers
-            let updatedContainers = (state.containers || []).map(c => {
-                if (batch.containerIds.includes(c.id)) {
-                    return { ...c, weight: 0, contributions: [], status: 'AVAILABLE' as const };
-                }
-                return c;
-            });
-
-            // Specific targeting function to map exact weights to exact containers
-            const fillContainersFromReadings = (readings: { containerId: string, netWeight: number }[], targetStatus: 'IN_USE' | 'QUARANTINED') => {
-                readings.forEach(reading => {
-                    const cIndex = updatedContainers.findIndex(c => c.id === reading.containerId);
-                    if (cIndex > -1) {
-                        const containerContributions = farmerRatios.map(r => ({
-                            farmerId: r.farmerId,
-                            deliveryId: batchId,
-                            weight: r.ratio * reading.netWeight
-                        }));
-
-                        updatedContainers[cIndex] = {
-                            ...updatedContainers[cIndex],
-                            status: targetStatus,
-                            weight: reading.netWeight,
-                            contributions: containerContributions
-                        };
-                    }
-                });
-            };
-
-            fillContainersFromReadings(sinkerReadings, 'IN_USE');
-            fillContainersFromReadings(floaterReadings, 'QUARANTINED');
-
-            const sinkerContainerIds = sinkerReadings.map((r: any) => r.containerId);
 
             const newHistory = [...batch.history];
             const existingIndex = newHistory.findIndex(h => h.stage === 'FLOATING' && !h.endDate);
@@ -194,10 +215,10 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
                 });
             }
 
-            const activeStages = project.processingPipeline && project.processingPipeline.length > 0 ? project.processingPipeline : (['RECEPTION', 'FLOATING', 'DESICCATION', 'RESTING'] as ProcessingStage[]);
+            const activeStages = project.processingPipeline && project.processingPipeline.length > 0 ?
+                project.processingPipeline : (['RECEPTION', 'FLOATING', 'DESICCATION', 'RESTING'] as ProcessingStage[]);
             const currentIndex = activeStages.indexOf('FLOATING');
             const nextStage = currentIndex < activeStages.length - 1 && currentIndex !== -1 ? activeStages[currentIndex + 1] : 'FLOATING';
-
             newHistory.push({
                 stage: nextStage,
                 startDate: endDate
@@ -220,7 +241,6 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
 
             return {
                 ...state,
-                containers: updatedContainers,
                 projects: state.projects.map(p => p.id === projectId ? updatedProject : p)
             };
         }
@@ -234,7 +254,6 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
 
             const totalWeight = sourceBatches.reduce((sum, b) => sum + b.weight, 0);
             const currentStage = sourceBatches[0].currentStage;
-
             const aggregatedSnapshot: { farmerId: string, weightKg: number }[] = [];
             sourceBatches.forEach(b => {
                 (b.traceabilitySnapshot || []).forEach(snap => {
@@ -246,7 +265,6 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
                     }
                 });
             });
-
             const allOldCrateIds = sourceBatches.flatMap(b => b.containerIds);
             let updatedContainers = (state.containers || []).map(c => {
                 if (allOldCrateIds.includes(c.id)) {
@@ -255,7 +273,8 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
                 return c;
             });
 
-            const farmerRatios = totalWeight > 0 ? aggregatedSnapshot.map(s => ({ farmerId: s.farmerId, ratio: s.weightKg / totalWeight })) : [];
+            const farmerRatios = totalWeight > 0 ?
+                aggregatedSnapshot.map(s => ({ farmerId: s.farmerId, ratio: s.weightKg / totalWeight })) : [];
 
             const d = new Date(startDate);
             const dayOfWeek = d.getDay() === 0 ? 7 : d.getDay();
@@ -296,7 +315,6 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
                     }
                 }
             });
-
             const newBatch: ProcessingBatch = {
                 id: newBatchId,
                 projectId: project.id,
@@ -309,7 +327,6 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
                 traceabilitySnapshot: aggregatedSnapshot,
                 history: [{ stage: currentStage, startDate, completedBy }]
             };
-
             const updatedBatches = project.processingBatches.map(b => {
                 if (sourceBatchIds.includes(b.id)) {
                     return { ...b, status: 'COMPLETED' as const, consumedByBatchId: newBatchId };
@@ -326,16 +343,13 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
         }
         case 'COMPLETE_PROCESSING_STEP': {
             const { projectId, batchId, stage, stages, weightOut, endDate, isOutsourced, outsourcedCost, completedBy, newBedId } = action.payload;
-
             const project = state.projects.find(p => p.id === projectId);
             if (!project) return state;
-
             const batch = (project.processingBatches || []).find(b => b.id === batchId);
             if (!batch) return state;
 
             const updatedHistory = [...batch.history];
             const stagesArray = stages && stages.length > 0 ? stages : [stage];
-
             stagesArray.forEach((s: ProcessingStage) => {
                 const existingIndex = updatedHistory.findIndex(h => h.stage === s && !h.endDate);
                 if (existingIndex !== -1) {
@@ -359,12 +373,10 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
                     });
                 }
             });
-
             const activeStages = project.processingPipeline && project.processingPipeline.length > 0 ? project.processingPipeline : (['RECEPTION', 'FLOATING', 'DESICCATION', 'RESTING'] as ProcessingStage[]);
             const lastCompletedStage = stagesArray[stagesArray.length - 1];
             const currentIndex = activeStages.indexOf(lastCompletedStage);
             const nextStage = currentIndex < activeStages.length - 1 && currentIndex !== -1 ? activeStages[currentIndex + 1] : lastCompletedStage;
-
             if (nextStage !== lastCompletedStage) {
                 updatedHistory.push({
                     stage: nextStage,
@@ -372,12 +384,21 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
                 });
             }
 
+            let finalBedId = newBedId || batch.dryingBedId;
+            let finalIsLocked = batch.isLocked;
+
+            if (batch.currentStage === 'DESICCATION' && nextStage !== 'DESICCATION') {
+                finalBedId = undefined;
+                finalIsLocked = false;
+            }
+
             const updatedBatch = {
                 ...batch,
                 status: nextStage === 'EXPORT_READY' ? 'COMPLETED' as const : 'IN_PROGRESS' as const,
                 currentStage: nextStage,
                 weight: weightOut ?? batch.weight,
-                dryingBedId: newBedId || batch.dryingBedId,
+                dryingBedId: finalBedId,
+                isLocked: finalIsLocked,
                 history: updatedHistory
             };
 
@@ -412,7 +433,6 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
             const { projectId, batchId, approvedBy } = action.payload;
             const project = state.projects.find(p => p.id === projectId);
             if (!project) return state;
-
             const batch = (project.processingBatches || []).find(b => b.id === batchId);
             if (!batch) return state;
 
@@ -423,12 +443,10 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
                 const idx = updatedHistory.findIndex(h => h === step);
                 updatedHistory[idx] = { ...step, approvedBy };
             });
-
             const activeStages = project.processingPipeline && project.processingPipeline.length > 0 ? project.processingPipeline : (['RECEPTION', 'FLOATING', 'DESICCATION', 'RESTING'] as ProcessingStage[]);
             const lastCompletedStage = updatedHistory.slice().reverse().find(h => h.endDate)?.stage || batch.currentStage;
             const currentIndex = activeStages.indexOf(lastCompletedStage);
             const nextStage = currentIndex < activeStages.length - 1 && currentIndex !== -1 ? activeStages[currentIndex + 1] : lastCompletedStage;
-
             if (nextStage !== lastCompletedStage && !updatedHistory.some(h => h.stage === nextStage)) {
                 updatedHistory.push({
                     stage: nextStage,
@@ -445,13 +463,13 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
 
             if (nextStage === 'RESTING' && updatedBatch.dryingBedId) {
                 updatedBatch.dryingBedId = undefined;
+                updatedBatch.isLocked = false;
             }
 
             const updatedProject = {
                 ...project,
                 processingBatches: project.processingBatches.map(b => b.id === batchId ? updatedBatch : b)
             };
-
             return {
                 ...state,
                 projects: state.projects.map(p => p.id === projectId ? updatedProject : p)
@@ -532,14 +550,11 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
                     else newTraceability.push({ farmerId: contrib.farmerId, weightKg: contrib.weight });
                 });
             });
-
             const updatedContainers = (state.containers || []).map(c =>
                 containerIds.includes(c.id) ? { ...c, weight: 0, contributions: [], status: 'AVAILABLE' as const } : c
             );
-
             let updatedBatches = [...project.processingBatches];
             const existingBatchIndex = updatedBatches.findIndex(b => b.currentStage === 'DESICCATION' && b.dryingBedId === dryingBedId && b.status !== 'COMPLETED');
-
             if (existingBatchIndex !== -1) {
                 const existingBatch = updatedBatches[existingBatchIndex];
                 const mergedSnapshot = [...(existingBatch.traceabilitySnapshot || [])];
@@ -548,7 +563,6 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
                     if (existing) existing.weightKg += nt.weightKg;
                     else mergedSnapshot.push(nt);
                 });
-
                 updatedBatches[existingBatchIndex] = {
                     ...existingBatch,
                     weight: existingBatch.weight + addedWeight,
@@ -557,7 +571,6 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
             } else {
                 const d = new Date(startDate);
                 const newBatchId = `${d.getDay() === 0 ? 7 : d.getDay()}-wk${getWeek(d).toString().padStart(2, '0')}${d.getFullYear().toString().slice(-2)}-${targetBed?.uniqueNumber || 'BED'}`;
-
                 updatedBatches.push({
                     id: newBatchId,
                     projectId,
@@ -600,11 +613,9 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
             const updatedContainers = (state.containers || []).map(c =>
                 (batch.containerIds || []).includes(c.id) ? { ...c, weight: 0, contributions: [], status: 'AVAILABLE' as const } : c
             );
-
             const updatedBatches = project.processingBatches.map(b =>
                 b.id === batchId ? { ...b, dryingBedId, containerIds: [] } : b
             );
-
             return {
                 ...state,
                 containers: updatedContainers,
@@ -730,7 +741,6 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
                 };
 
                 delete (newSale as any).items;
-
                 return {
                     ...p,
                     processingBatches: newProcessingBatches,
@@ -742,7 +752,6 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
             const { sourceProjectId, targetProjectId, batchId, weight, date } = action.payload;
             const sourceProject = state.projects.find(p => p.id === sourceProjectId);
             const sourceBatch = sourceProject?.processingBatches.find(b => b.id === batchId);
-
             if (!sourceProject || !sourceBatch) return state;
 
             const updatedProjects = state.projects.map(p => {
@@ -793,7 +802,6 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
         }
         case 'WIPE_PROJECT_DATA': {
             const { deliveryIds, batchIds } = action.payload;
-
             // 1. Clean up containers connected to this project
             const updatedContainers = (state.containers || []).map(container => {
                 // Filter out contributions that match the deleted deliveries or batches
@@ -813,7 +821,6 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
                 }
                 return container;
             });
-
             return { ...state, containers: updatedContainers };
         }
         default:

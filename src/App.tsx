@@ -121,7 +121,6 @@ const MainAppContent: React.FC = () => {
 
     const handleApplySelection = (ids: string[]) => {
         dispatch({ type: 'SET_SELECTED_PROJECT_IDS', payload: { ids } });
-
         if (ids.length > 1 && (activeModule === 'OPERATIONS')) {
             setActiveModule('DASHBOARDS');
             setActiveSubTab(canViewFinancials ? 'cashDashboard' : 'opsDashboard');
@@ -150,7 +149,6 @@ const MainAppContent: React.FC = () => {
                 }
             });
         });
-
         alert(`Successfully wiped operational data for ${count} project(s).`);
     };
 
@@ -194,7 +192,6 @@ const MainAppContent: React.FC = () => {
             const blob = new Blob([dataStr], { type: "application/json" });
             const url = URL.createObjectURL(blob);
             const exportFileDefaultName = `cherry-to-bean-backup-${new Date().toISOString().split('T')[0]}.json`;
-
             const linkElement = document.createElement('a');
             linkElement.href = url;
             linkElement.download = exportFileDefaultName;
@@ -214,7 +211,6 @@ const MainAppContent: React.FC = () => {
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = 'application/json';
-
         input.onchange = (event) => {
             const file = (event.target as HTMLInputElement).files?.[0];
             if (!file) return;
@@ -225,7 +221,6 @@ const MainAppContent: React.FC = () => {
                     const text = e.target?.result;
                     if (typeof text !== 'string') throw new Error("Failed to read file content.");
                     const data = JSON.parse(text);
-
                     if (data.projects) {
                         dispatch({
                             type: 'IMPORT_PROJECTS',
@@ -350,7 +345,7 @@ const MainAppContent: React.FC = () => {
                                 {/* Content */}
                                 <div role="tabpanel" hidden={activeModule !== 'PROJECT_SETUP'}>
                                     {singleActiveProject ? (
-                                        <ProjectSetup project={singleActiveProject} />
+                                        <ProjectSetup project={singleActiveProject} isFocusMode={isFocusMode} />
                                     ) : (
                                         <div className="bg-white dark:bg-brand-dark rounded-xl shadow-md p-8 text-center border border-gray-200 dark:border-gray-700 h-64 flex flex-col justify-center items-center">
                                             <Icon name="switchHorizontal" className="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4" />
@@ -362,7 +357,7 @@ const MainAppContent: React.FC = () => {
 
                                 <div role="tabpanel" hidden={activeModule !== 'OPERATIONS' || activeSubTab !== 'cherryDeliveries'}>
                                     {singleActiveProject ? (
-                                        <DataEntry project={singleActiveProject} activeTab="deliveries" hideTabs={true} onNavigateToSettings={() => setActiveSetting('storageLocations')} readOnly={!canEdit} />
+                                        <DataEntry project={singleActiveProject} activeTab="deliveries" hideTabs={true} onNavigateToSettings={() => setActiveSetting('storageLocations')} readOnly={!canEdit} isFocusMode={isFocusMode} />
                                     ) : (
                                         <div className="bg-white dark:bg-brand-dark rounded-xl shadow-md p-8 text-center border border-gray-200 dark:border-gray-700 h-64 flex flex-col justify-center items-center">
                                             <Icon name="switchHorizontal" className="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4" />
@@ -374,7 +369,7 @@ const MainAppContent: React.FC = () => {
 
                                 <div role="tabpanel" hidden={activeModule !== 'OPERATIONS' || activeSubTab !== 'processingWorkflow'}>
                                     {singleActiveProject ? (
-                                        <DataEntry project={singleActiveProject} activeTab="processing" hideTabs={true} onNavigateToSettings={() => setActiveSetting('storageLocations')} readOnly={!canEdit} />
+                                        <DataEntry project={singleActiveProject} activeTab="processing" hideTabs={true} onNavigateToSettings={() => setActiveSetting('storageLocations')} readOnly={!canEdit} isFocusMode={isFocusMode} />
                                     ) : (
                                         <div className="bg-white dark:bg-brand-dark rounded-xl shadow-md p-8 text-center border border-gray-200 dark:border-gray-700 h-64 flex flex-col justify-center items-center">
                                             <Icon name="switchHorizontal" className="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4" />
@@ -399,7 +394,7 @@ const MainAppContent: React.FC = () => {
                                 <div role="tabpanel" hidden={activeModule !== 'FINANCE' || activeSubTab !== 'paymentsAdvances'}>
                                     {/* Merged view of Payments & Advances */}
                                     {singleActiveProject ? (
-                                        <DataEntry project={singleActiveProject} activeTab="advances" hideTabs={true} onNavigateToSettings={() => setActiveSetting('storageLocations')} readOnly={!canEdit} />
+                                        <DataEntry project={singleActiveProject} activeTab="advances" hideTabs={true} onNavigateToSettings={() => setActiveSetting('storageLocations')} readOnly={!canEdit} isFocusMode={isFocusMode} />
                                     ) : (
                                         <div className="bg-white dark:bg-brand-dark rounded-xl shadow-md p-8 text-center border border-gray-200 dark:border-gray-700 h-64 flex flex-col justify-center items-center">
                                             <Icon name="switchHorizontal" className="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4" />

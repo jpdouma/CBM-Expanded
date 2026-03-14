@@ -1,3 +1,4 @@
+// ==> src/components/data-entry/DataEntry.tsx <==
 import React, { useState } from 'react';
 import type { Project, Advance } from '../../types';
 import { useProjects } from '../../context/ProjectProvider';
@@ -15,28 +16,28 @@ interface DataEntryProps {
     activeTab?: DataEntryTab;
     onTabChange?: (tab: DataEntryTab) => void;
     hideTabs?: boolean;
+    isFocusMode?: boolean;
 }
 
 type DataEntryTab = 'deliveries' | 'advances' | 'processing';
 
-const TabButton: React.FC<{ tabId: DataEntryTab, activeTab: DataEntryTab, setActiveTab: (tabId: DataEntryTab) => void, children: React.ReactNode }> = 
-({ tabId, activeTab, setActiveTab, children }) => (
-    <button
-        onClick={() => setActiveTab(tabId)}
-        className={`px-4 py-2 text-sm font-heading font-bold rounded-t-lg transition-all border-b-2 ${
-            activeTab === tabId 
-                ? 'text-brand-blue dark:text-white border-brand-blue dark:border-brand-red bg-white dark:bg-brand-dark' 
+const TabButton: React.FC<{ tabId: DataEntryTab, activeTab: DataEntryTab, setActiveTab: (tabId: DataEntryTab) => void, children: React.ReactNode }> =
+    ({ tabId, activeTab, setActiveTab, children }) => (
+        <button
+            onClick={() => setActiveTab(tabId)}
+            className={`px-4 py-2 text-sm font-heading font-bold rounded-t-lg transition-all border-b-2 ${activeTab === tabId
+                ? 'text-brand-blue dark:text-white border-brand-blue dark:border-brand-red bg-white dark:bg-brand-dark'
                 : 'bg-transparent text-gray-500 dark:text-gray-400 border-transparent hover:text-brand-dark dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800/50'
-        }`}
-    >
-        {children}
-    </button>
-);
+                }`}
+        >
+            {children}
+        </button>
+    );
 
-export const DataEntry: React.FC<DataEntryProps> = ({ project, onNavigateToSettings, readOnly, activeTab: externalActiveTab, onTabChange, hideTabs }) => {
+export const DataEntry: React.FC<DataEntryProps> = ({ project, onNavigateToSettings, readOnly, activeTab: externalActiveTab, onTabChange, hideTabs, isFocusMode }) => {
     const { state, dispatch } = useProjects();
     const { farmers: allFarmers = [], buyingPrices = [], containers = [] } = state;
-    
+
     const [internalActiveTab, setInternalActiveTab] = useState<DataEntryTab>('deliveries');
     const activeTab = externalActiveTab || internalActiveTab;
     const setActiveTab = onTabChange || setInternalActiveTab;
@@ -74,11 +75,11 @@ export const DataEntry: React.FC<DataEntryProps> = ({ project, onNavigateToSetti
 
     return (
         <div className="space-y-6">
-            <div className="flex justify-between items-center">
+            <div className={`flex justify-between items-center ${isFocusMode ? 'hidden' : ''}`}>
                 <h2 className="text-2xl font-heading font-black text-brand-dark dark:text-white uppercase tracking-tight">Operations: {project.name}</h2>
                 <div className="flex gap-2">
                     {activeTab === 'deliveries' && !readOnly && (
-                        <button 
+                        <button
                             onClick={() => setShowBulkDelivery(true)}
                             className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded flex items-center gap-2"
                         >
@@ -86,7 +87,7 @@ export const DataEntry: React.FC<DataEntryProps> = ({ project, onNavigateToSetti
                         </button>
                     )}
                     {activeTab === 'advances' && !readOnly && (
-                        <button 
+                        <button
                             onClick={() => setShowBulkAdvance(true)}
                             className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded flex items-center gap-2"
                         >
@@ -108,12 +109,12 @@ export const DataEntry: React.FC<DataEntryProps> = ({ project, onNavigateToSetti
 
             <div className="mt-6">
                 {activeTab === 'deliveries' && (
-                    <DeliveryForm 
-                        project={project} 
-                        farmers={allFarmers} 
+                    <DeliveryForm
+                        project={project}
+                        farmers={allFarmers}
                         buyingPrices={buyingPrices}
                         containers={containers}
-                        onAddDelivery={handleAddDelivery} 
+                        onAddDelivery={handleAddDelivery}
                         onAddContainer={handleAddContainer}
                         onUpdateContainer={handleUpdateContainer}
                         onAddPaymentLine={handleAddPaymentLine}
@@ -128,17 +129,17 @@ export const DataEntry: React.FC<DataEntryProps> = ({ project, onNavigateToSetti
             </div>
 
             {showBulkDelivery && (
-                <BulkDeliveryForm 
-                    farmers={allFarmers} 
-                    onBulkAdd={handleBulkAddDeliveries} 
-                    onClose={() => setShowBulkDelivery(false)} 
+                <BulkDeliveryForm
+                    farmers={allFarmers}
+                    onBulkAdd={handleBulkAddDeliveries}
+                    onClose={() => setShowBulkDelivery(false)}
                 />
             )}
             {showBulkAdvance && (
-                <BulkAdvanceForm 
-                    farmers={allFarmers} 
-                    onBulkAdd={handleBulkAddAdvances} 
-                    onClose={() => setShowBulkAdvance(false)} 
+                <BulkAdvanceForm
+                    farmers={allFarmers}
+                    onBulkAdd={handleBulkAddAdvances}
+                    onClose={() => setShowBulkAdvance(false)}
                 />
             )}
         </div>
