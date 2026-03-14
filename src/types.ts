@@ -125,55 +125,6 @@ export interface MoistureMeasurement {
     percentage: number;
 }
 
-export interface DryingBatch {
-    id: string;
-    deliveryId: string;
-    startDate: string;
-    initialCherryWeight: number;
-    moistureMeasurements: MoistureMeasurement[];
-}
-
-export interface StoredBatch {
-    id: string;
-    deliveryId: string;
-    dryingBatchId?: string | null;
-    storageDate: string;
-    initialCherryWeight: number;
-    weight?: number;
-    locationId?: string;
-    actualDryingDays?: number;
-    cuppingScore1?: number;
-}
-
-export interface HullingBatch {
-    id: string;
-    storedBatchId: string;
-    startDate: string;
-}
-
-export interface HulledBatch {
-    id: string;
-    storedBatchId: string;
-    deliveryId: string;
-    hullingDate: string;
-    initialCherryWeight: number;
-    greenBeanWeight: number;
-    cuppingScore2?: number;
-    isTransfer?: boolean;
-    traceabilitySnapshot?: { farmerId: string; weightKg: number }[];
-    sourceBatchIds?: string[];
-    palletLevel?: string;
-    isRemainder?: boolean;
-    consumedByBatchId?: string;
-    bagCount?: number;
-    bagWeightKg?: number;
-    costBasisUSD?: number;
-    warehouseLocation?: string;
-    storageZone?: string;
-    palletId?: string;
-    sourceProjectId?: string;
-}
-
 export type ProcessingTier = 'HIGH_COMMERCIAL' | 'TARGET_SPECIALTY' | 'MICRO_LOTS';
 
 export interface BuyingPrices {
@@ -204,9 +155,16 @@ export interface Container {
     id: string;
     label: string;
     weight: number; // Max 48kg
+    tareWeightKg?: number; // Phase 1: Tare weight physics
     contributions: { farmerId: string; deliveryId: string; weight: number }[];
     date: string;
     status: 'AVAILABLE' | 'IN_USE' | 'QUARANTINED';
+}
+
+export interface FloatingTank {
+    id: string;
+    name: string;
+    capacityKg: number;
 }
 
 export type ProcessingStage = 'RECEPTION' | 'FLOATING' | 'PULPING' | 'FERMENTATION' | 'DESICCATION' | 'RESTING' | 'DE_STONING' | 'HULLING' | 'POLISHING' | 'GRADING' | 'DENSITY' | 'COLOR_SORTING' | 'EXPORT_READY';
@@ -230,6 +188,7 @@ export interface ProcessingBatch {
     projectId: string;
     containerIds: string[];
     dryingBedId?: string;
+    floatingTankId?: string;
     currentStage: ProcessingStage;
     status: BatchStatus;
     weight: number; // Current weight
@@ -267,6 +226,7 @@ export interface ProcessingBatch {
 
 export interface GlobalSettings {
     processingCosts: { stage: ProcessingStage, standardCost: number, variableLaborCost: number }[];
+    defaultContainerTareWeight?: number; // Phase 1: Default container tare weight
 }
 
 export interface LogisticsCost {
@@ -289,8 +249,7 @@ export interface PaymentInstallment {
 export interface Sale {
     id: string;
     invoiceDate: string; // Main date (often invoice date)
-    hulledBatchIds: string[]; // Legacy compatibility
-    processingBatchIds?: string[]; // New compatibility
+    processingBatchIds: string[]; // Replaces legacy hulledBatchIds
     items?: { batchId: string; bags: number }[]; // Supports partial sales
     pricePerKg: number;
     currency: Currency;
@@ -428,6 +387,15 @@ export interface StorageLocation {
     allowedLevels: string[]; // Config for vertical levels (A, B, C)
 }
 
+export interface ForecastSnapshot {
+    id: string;
+    date: string;
+    name: string;
+    velocity: number;
+    costPerKg: number;
+    data: { date: string; balance: number; type: 'historical' | 'projected' }[];
+}
+
 export interface Project {
     id: string;
     name: string;
@@ -447,6 +415,7 @@ export interface Project {
     targetMoisturePercentage: number;
     requiredGreenBeanMassKg: number;
     exchangeRateUGXtoUSD: number;
+    exchangeRateEURtoUSD?: number; // ADDED: Match UGX pattern for EUR support
     targetSalePricePerKg: number;
     targetSalePriceCurrency: Currency;
     clientId: string | null;
@@ -459,41 +428,27 @@ export interface Project {
     deliveries: Delivery[];
 
     // NEW UNIFIED STATE MACHINE
-    processingPipeline: ProcessingStage[]; // New data-driven flow
+    processingPipeline: ProcessingStage[];
     processingBatches: ProcessingBatch[];
-
-    // LEGACY ARRAYS (kept for compatibility during transition if needed, but we should migrate)
-    dryingBatches: DryingBatch[];
-    storedBatches: StoredBatch[];
-    hullingBatches: HullingBatch[];
-    hulledBatches: HulledBatch[];
 
     sales: Sale[];
     financing: Financing[];
-    // Helper to store client snapshot if needed, though typically we use clientId
     clientDetails: ClientDetails;
-}
-
-export interface ForecastSnapshot {
-    id: string;
-    date: string;
-    name: string;
-    velocity: number;
-    costPerKg: number;
-    data: { date: string; balance: number; type: 'historical' | 'projected' }[];
+    forecastSnapshots?: ForecastSnapshot[]; // ADDED: Correctly attach to Project
 }
 
 export interface ProjectState {
     projects: Project[];
     selectedProjectIds: string[];
     dryingBeds: DryingBed[];
+    floatingTanks: FloatingTank[]; // ADDED for Phase 2
     clients: ClientDetails[];
     financiers: Financier[];
     storageLocations: StorageLocation[];
     farmers: Farmer[]; // Global Farmer Pool
     users: User[]; // Authenticated Users
     roles: Role[]; // RBAC Roles
-    forecastSnapshots?: ForecastSnapshot[];
+    forecastSnapshots?: ForecastSnapshot[]; // Kept for legacy compatibility
     // NEW GLOBAL STATE
     globalSettings: GlobalSettings;
     buyingPrices: BuyingPrices[];
@@ -540,6 +495,9 @@ type AddFinancingAction = { type: 'ADD_FINANCING'; payload: { projectId: string;
 type AddDryingBedAction = { type: 'ADD_DRYING_BED', payload: { bedData: Omit<DryingBed, 'id'>; id?: string } };
 type UpdateDryingBedAction = { type: 'UPDATE_DRYING_BED', payload: { bedId: string, updates: Partial<Omit<DryingBed, 'id'>> } };
 type DeleteDryingBedAction = { type: 'DELETE_DRYING_BED', payload: { bedId: string } };
+type AddFloatingTankAction = { type: 'ADD_FLOATING_TANK', payload: { tankData: Omit<FloatingTank, 'id'>; id?: string } };
+type UpdateFloatingTankAction = { type: 'UPDATE_FLOATING_TANK', payload: { tankId: string, updates: Partial<Omit<FloatingTank, 'id'>> } };
+type DeleteFloatingTankAction = { type: 'DELETE_FLOATING_TANK', payload: { tankId: string } };
 type AddClientAction = { type: 'ADD_CLIENT', payload: { clientData: Omit<ClientDetails, 'id'> } };
 type UpdateClientAction = { type: 'UPDATE_CLIENT', payload: { clientId: string, updates: Partial<Omit<ClientDetails, 'id'>> } };
 type DeleteClientAction = { type: 'DELETE_CLIENT', payload: { clientId: string } };
@@ -576,14 +534,14 @@ type AddBulkDeliveriesAction = { type: 'ADD_BULK_DELIVERIES'; payload: { project
 type AddContainerAction = { type: 'ADD_CONTAINER'; payload: { data: Omit<Container, 'id'> } };
 type UpdateContainerAction = { type: 'UPDATE_CONTAINER'; payload: { containerId: string; updates: Partial<Container> } };
 type AssignContainersAction = { type: 'ASSIGN_CONTAINERS'; payload: { projectId: string; deliveryId: string; containerIds: string[] } };
-type InitializeBatchAction = { type: 'INITIALIZE_BATCH'; payload: { projectId: string; containerIds: string[]; initialStage: ProcessingStage; dryingBedId?: string; startDate: string } };
-type CompleteProcessingStepAction = { type: 'COMPLETE_PROCESSING_STEP'; payload: { projectId: string; batchId: string; stage: ProcessingStage; weightOut?: number; endDate: string; isOutsourced?: boolean; outsourcedCost?: number; completedBy: string; newBedId?: string } };
+type InitializeBatchAction = { type: 'INITIALIZE_BATCH'; payload: { projectId: string; containerIds: string[]; initialStage: ProcessingStage; dryingBedId?: string; floatingTankId?: string; startDate: string } };
+type CompleteProcessingStepAction = { type: 'COMPLETE_PROCESSING_STEP'; payload: { projectId: string; batchId: string; stage: ProcessingStage; stages?: ProcessingStage[]; weightOut?: number; endDate: string; isOutsourced?: boolean; outsourcedCost?: number; completedBy: string; newBedId?: string } };
 type ApproveProcessingStepAction = { type: 'APPROVE_PROCESSING_STEP'; payload: { projectId: string; batchId: string; approvedBy: string } };
 type ApproveContainerLoadingAction = { type: 'APPROVE_CONTAINER_LOADING'; payload: { projectId: string; batchId: string; officialStartDate: string; approvedBy: string } };
 type SetOutsourcedCostAction = { type: 'SET_OUTSOURCED_COST'; payload: { projectId: string; batchId: string; stage: ProcessingStage; cost: number } };
 type AddBatchMoistureMeasurementAction = { type: 'ADD_BATCH_MOISTURE_MEASUREMENT'; payload: { projectId: string; batchId: string; data: Omit<MoistureMeasurement, 'id'> } };
 type UpdateBatchCuppingScoreAction = { type: 'UPDATE_BATCH_CUPPING_SCORE'; payload: { projectId: string; batchId: string; score: number } };
-type ToggleBatchLockAction = { type: 'TOGGLE_BATCH_LOCK'; payload: { projectId: string; batchId: string; } }; // Sprint 24
+type ToggleBatchLockAction = { type: 'TOGGLE_BATCH_LOCK'; payload: { projectId: string; batchId: string; } };
 
 type CompleteFloatingAction = {
     type: 'COMPLETE_FLOATING';
@@ -634,51 +592,11 @@ type ReceptionDeliveryAction = { type: 'RECEPTION_DELIVERY'; payload: { projectI
 type DeleteFinancingAction = { type: 'DELETE_FINANCING'; payload: { projectId: string; eventId: string } };
 type CloseContainerAction = { type: 'CLOSE_CONTAINER'; payload: { containerId: string } };
 
-// LEGACY PROCESSING ACTIONS (Keep for now, but we will migrate away)
-type StartDryingAction = { type: 'START_DRYING'; payload: { projectId: string; deliveryId: string; startDate: string } };
-type AddMoistureMeasurementAction = { type: 'ADD_MOISTURE_MEASUREMENT'; payload: { projectId: string; dryingBatchId: string; data: Omit<MoistureMeasurement, 'id'> } };
-type MoveToStorageAction = { type: 'MOVE_TO_STORAGE'; payload: { projectId: string; sourceId: string; sourceType: 'delivery' | 'dryingBatch'; storageDate: string; cuppingScore1: number } };
-type StartHullingAction = { type: 'START_HULLING'; payload: { projectId: string; storedBatchId: string; startDate: string } };
-type CompleteHullingAction = {
-    type: 'COMPLETE_HULLING';
-    payload: {
-        projectId: string;
-        storedBatchIds: string[];
-        hullingDate: string;
-        greenBeanWeight: number;
-        cuppingScore2: number;
-        warehouseLocation?: string;
-        storageZone?: string;
-        bagWeightKg?: number;
-        bagCount?: number;
-        remainderWeight?: number;
-        remainderLocation?: string;
-        remainderStorageZone?: string;
-        remainderPalletId?: string;
-        mergeRemainderBatchIds?: string[];
-    }
-};
-
-type MoveBatchStockAction = {
-    type: 'MOVE_BATCH_STOCK';
-    payload: {
-        projectId: string;
-        batchId: string;
-        bagsToMove: number;
-        locationData: {
-            storageRow: string;
-            palletId: string;
-            palletLevel: string;
-            storageZone?: string;
-        }
-    }
-};
-
 type AddSaleAction = {
     type: 'ADD_SALE';
     payload: {
         projectId: string;
-        data: Omit<Sale, 'id' | 'totalSaleAmountUSD' | 'hulledBatchIds'> & {
+        data: Omit<Sale, 'id' | 'totalSaleAmountUSD' | 'processingBatchIds'> & {
             items: { batchId: string; bags: number }[]
         }
     }
@@ -710,6 +628,16 @@ type PourBatchToBedAction = {
     payload: { projectId: string; batchId: string; dryingBedId: string; }
 };
 
+type WipeProjectDataAction = {
+    type: 'WIPE_PROJECT_DATA';
+    payload: {
+        projectId: string;
+        deliveryIds: string[];
+        advanceIds: string[];
+        batchIds: string[];
+    }
+};
+
 export type ProjectAction =
     | AddProjectAction
     | DeleteProjectAction
@@ -728,6 +656,9 @@ export type ProjectAction =
     | AddDryingBedAction
     | UpdateDryingBedAction
     | DeleteDryingBedAction
+    | AddFloatingTankAction
+    | UpdateFloatingTankAction
+    | DeleteFloatingTankAction
     | AddClientAction
     | UpdateClientAction
     | DeleteClientAction
@@ -774,12 +705,6 @@ export type ProjectAction =
     | ReceptionDeliveryAction
     | DeleteFinancingAction
     | CloseContainerAction
-    | StartDryingAction
-    | AddMoistureMeasurementAction
-    | MoveToStorageAction
-    | StartHullingAction
-    | CompleteHullingAction
-    | MoveBatchStockAction
     | AddSaleAction
     | TransferStockAction
     | UpdateEntryDateAction
@@ -793,4 +718,5 @@ export type ProjectAction =
     | HarvestDryingBedAction
     | PourBatchToBedAction
     | PutAwayBatchAction
-    | ToggleBatchLockAction;
+    | ToggleBatchLockAction
+    | WipeProjectDataAction;

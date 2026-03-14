@@ -1,7 +1,8 @@
+// ==> src/components/AppHeader.tsx <==
 import React, { useState, useRef, useEffect } from 'react';
 import { Icon } from './Icons';
 import { Logo } from './Logo';
-import type { Project, ProcessingTier, Currency } from '../types';
+import type { Project, ProcessingTier } from '../types';
 import { useAuth } from '../context/AuthProvider';
 import { usePermissions } from '../hooks/usePermissions';
 import { useTheme } from '../context/ThemeProvider';
@@ -13,14 +14,14 @@ interface AppHeaderProps {
     onActivityLogClick: () => void;
     onImport: () => void;
     onExport: () => void;
-
     // Project Management Props
     projects: Project[];
     selectedProjectIds: string[];
-    onProjectSelection: (projectId: string) => void;
+    onApplySelection: (projectIds: string[]) => void;
     onAddProject: (name: string, tier: ProcessingTier) => void;
     onDeleteProject: (e: React.MouseEvent, projectId: string, projectName: string) => void;
     onSelectAllProjects?: () => void;
+    onWipeProjects: (projectsToWipe: Project[]) => void;
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
@@ -31,19 +32,26 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
     onExport,
     projects,
     selectedProjectIds,
-    onProjectSelection,
+    onApplySelection,
     onAddProject,
     onDeleteProject,
-    onSelectAllProjects
+    onSelectAllProjects,
+    onWipeProjects
 }) => {
     const { currentUser, logout } = useAuth();
     const { canEdit, canManageSettings, canDelete } = usePermissions();
     const { theme, toggleTheme } = useTheme();
-    const { state, dispatch } = useProjects();
+    const { state, dispatch, isSyncing } = useProjects();
     const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
     const [newProjectName, setNewProjectName] = useState('');
     const [newProjectTier, setNewProjectTier] = useState<ProcessingTier>('HIGH_COMMERCIAL');
     const menuRef = useRef<HTMLDivElement>(null);
+
+    // GHOST ID FIX: Filter out IDs that no longer exist in the projects array
+    const validSelectedIds = selectedProjectIds.filter(id => projects.some(p => p.id === id));
+
+    // Local draft state for the "Draft & Confirm" pattern
+    const [draftSelectedIds, setDraftSelectedIds] = useState<string[]>([]);
 
     // Close menu when clicking outside
     useEffect(() => {
@@ -56,20 +64,40 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
+    // Synchronize draft state when the menu is opened
+    useEffect(() => {
+        if (isProjectMenuOpen) {
+            setDraftSelectedIds(validSelectedIds);
+        }
+    }, [isProjectMenuOpen]);
+
+    const handleToggleMenu = () => {
+        setIsProjectMenuOpen(!isProjectMenuOpen);
+    };
+
     const handleAddNew = () => {
         if (newProjectName.trim()) {
             onAddProject(newProjectName.trim(), newProjectTier);
             setNewProjectName('');
             setNewProjectTier('HIGH_COMMERCIAL');
+            setIsProjectMenuOpen(false); // Close dropdown
         }
     };
 
-    // Calculate summary text for the button
-    const selectionLabel = selectedProjectIds.length === 0
+    const toggleProjectDraft = (projectId: string) => {
+        setDraftSelectedIds(prev =>
+            prev.includes(projectId)
+                ? prev.filter(id => id !== projectId)
+                : [...prev, projectId]
+        );
+    };
+
+    // Calculate summary text for the button using only valid IDs
+    const selectionLabel = validSelectedIds.length === 0
         ? "Select Project"
-        : selectedProjectIds.length === 1
-            ? projects.find(p => p.id === selectedProjectIds[0])?.name || "Unknown Project"
-            : `${selectedProjectIds.length} Projects Selected`;
+        : validSelectedIds.length === 1
+            ? projects.find(p => p.id === validSelectedIds[0])?.name || "Unknown Project"
+            : `${validSelectedIds.length} Projects Selected`;
 
     return (
         <header className="bg-white dark:bg-brand-dark/50 backdrop-blur-sm shadow-lg p-3 flex justify-between items-center sticky top-0 z-50 border-b border-gray-200 dark:border-gray-700 transition-colors duration-200">
@@ -85,8 +113,8 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                 {/* Project Selector Dropdown */}
                 <div className="relative" ref={menuRef}>
                     <button
-                        onClick={() => setIsProjectMenuOpen(!isProjectMenuOpen)}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-md border transition-colors ${selectedProjectIds.length > 0 ? 'bg-gray-100 dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-brand-dark dark:text-white' : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-600 text-gray-400'}`}
+                        onClick={handleToggleMenu}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-md border transition-colors ${validSelectedIds.length > 0 ? 'bg-gray-100 dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-brand-dark dark:text-white' : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-600 text-gray-400'}`}
                     >
                         <Icon name="coffeeBean" className="w-5 h-5" />
                         <span className="font-medium max-w-[200px] truncate">{selectionLabel}</span>
@@ -94,26 +122,26 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                     </button>
 
                     {isProjectMenuOpen && (
-                        <div className="absolute top-full left-0 mt-2 w-80 bg-gray-800 border border-gray-600 rounded-lg shadow-xl overflow-hidden">
+                        <div className="absolute top-full left-0 mt-2 w-80 bg-gray-800 border border-gray-600 rounded-lg shadow-xl overflow-hidden flex flex-col max-h-[85vh]">
                             <div className="p-2 border-b border-gray-700 flex justify-between items-center bg-gray-900/30">
                                 <span className="text-xs font-bold text-gray-500 uppercase">Projects</span>
-                                {onSelectAllProjects && (
-                                    <button
-                                        onClick={onSelectAllProjects}
-                                        className="text-xs text-blue-400 hover:text-blue-300"
-                                    >
-                                        Select All
-                                    </button>
-                                )}
+                                <button
+                                    onClick={() => setDraftSelectedIds(projects.map(p => p.id))}
+                                    className="text-xs text-blue-400 hover:text-blue-300"
+                                >
+                                    Select All
+                                </button>
                             </div>
-                            <div className="p-2 border-b border-gray-700 max-h-60 overflow-y-auto">
+
+                            <div className="p-2 border-b border-gray-700 overflow-y-auto flex-shrink">
                                 {projects.length === 0 && <p className="text-gray-500 text-sm p-2 text-center">No projects visible.</p>}
                                 {projects.map(p => {
-                                    const isSelected = selectedProjectIds.includes(p.id);
+                                    // Use local draft state for rendering checkboxes
+                                    const isSelected = draftSelectedIds.includes(p.id);
                                     return (
                                         <div
                                             key={p.id}
-                                            onClick={() => onProjectSelection(p.id)}
+                                            onClick={() => toggleProjectDraft(p.id)}
                                             className={`group flex items-center justify-between p-2 rounded cursor-pointer hover:bg-gray-700 ${isSelected ? 'bg-gray-700/50' : ''}`}
                                         >
                                             <div className="flex items-center gap-3 overflow-hidden">
@@ -143,7 +171,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
 
                             {/* Add New Project Input */}
                             {canEdit && (
-                                <div className="p-2 bg-gray-900/50 flex flex-col gap-2">
+                                <div className="p-3 bg-gray-900/50 flex flex-col gap-2">
                                     <div className="flex gap-2">
                                         <input
                                             type="text"
@@ -151,20 +179,14 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                                             onChange={(e) => setNewProjectName(e.target.value)}
                                             onKeyDown={(e) => e.key === 'Enter' && handleAddNew()}
                                             placeholder="New Project Name..."
-                                            className="flex-grow bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-white focus:ring-1 focus:ring-green-500 outline-none"
+                                            className="flex-grow bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-sm text-white focus:ring-1 focus:ring-green-500 outline-none"
                                             autoFocus
                                         />
-                                        <button
-                                            onClick={handleAddNew}
-                                            className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm font-bold"
-                                        >
-                                            <Icon name="plus" className="w-4 h-4" />
-                                        </button>
                                     </div>
                                     <select
                                         value={newProjectTier}
                                         onChange={(e) => setNewProjectTier(e.target.value as ProcessingTier)}
-                                        className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-white focus:ring-1 focus:ring-green-500 outline-none"
+                                        className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-sm text-white focus:ring-1 focus:ring-green-500 outline-none"
                                     >
                                         <option value="HIGH_COMMERCIAL">High Commercial (Tier 1)</option>
                                         <option value="TARGET_SPECIALTY">Target Specialty (Tier 2)</option>
@@ -172,13 +194,44 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                                     </select>
                                 </div>
                             )}
+
+                            {/* Action Footer */}
+                            <div className="p-3 border-t border-gray-700 bg-gray-900 flex flex-col gap-2 flex-shrink-0">
+                                <button
+                                    onClick={() => { onApplySelection(draftSelectedIds); setIsProjectMenuOpen(false); }}
+                                    className="w-full bg-brand-blue hover:opacity-90 text-white py-2 rounded-md font-bold text-sm transition-all shadow-sm"
+                                >
+                                    Confirm Selection
+                                </button>
+
+                                <button
+                                    disabled={!newProjectName.trim()}
+                                    onClick={handleAddNew}
+                                    className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded-md font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+                                >
+                                    Create Project
+                                </button>
+
+                                {currentUser?.roleId === 'system-admin-role' && (
+                                    <button
+                                        disabled={draftSelectedIds.length === 0}
+                                        onClick={() => {
+                                            const projectsToWipe = projects.filter(p => draftSelectedIds.includes(p.id));
+                                            onWipeProjects(projectsToWipe);
+                                            setIsProjectMenuOpen(false);
+                                        }}
+                                        className="w-full border border-red-500 text-red-500 hover:bg-red-500/10 py-2 rounded-md font-bold text-sm disabled:opacity-50 disabled:border-red-500/50 disabled:text-red-500/50 disabled:cursor-not-allowed transition-all mt-2"
+                                    >
+                                        Wipe Selected
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     )}
                 </div>
             </div>
 
             <div className="flex items-center gap-2">
-
                 <button
                     onClick={onActivityLogClick}
                     className="p-2 text-gray-500 dark:text-gray-400 hover:text-brand-blue dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
@@ -201,7 +254,10 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
 
                 <div className="text-right mr-2 hidden md:block">
                     <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase font-bold">Logged in as</p>
-                    <p className="text-sm font-bold text-brand-dark dark:text-white leading-none">{currentUser?.name}</p>
+                    <div className="flex items-center justify-end gap-1.5">
+                        {isSyncing && <Icon name="refresh" className="w-3.5 h-3.5 text-gray-400 animate-spin" title="Syncing to cloud..." />}
+                        <p className="text-sm font-bold text-brand-dark dark:text-white leading-none">{currentUser?.name}</p>
+                    </div>
                 </div>
 
                 {canManageSettings && (

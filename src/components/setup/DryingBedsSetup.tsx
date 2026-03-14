@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+// ==> src/components/setup/DryingBedsSetup.tsx <==
+import React, { useState, useEffect } from 'react';
 import type { DryingBed } from '../../types';
 import { Icon } from '../Icons';
 import { getWeek, formatDate } from '../../utils/formatters';
@@ -27,19 +28,30 @@ export const DryingBedsSetup: React.FC<DryingBedsSetupProps> = ({ beds, onAddBed
         creationDate: new Date().toISOString().split('T')[0]
     });
 
-    const generateBedName = (dateStr: string) => {
-        const d = new Date(dateStr);
-        if (isNaN(d.getTime())) return '';
-        const wk = getWeek(d).toString().padStart(2, '0');
-        const yr = d.getFullYear();
-        const randomName = CHRISTIAN_NAMES[Math.floor(Math.random() * CHRISTIAN_NAMES.length)];
-        return `${wk}-${yr}-${randomName}`;
-    };
+    // Auto-generation logic for uniqueNumber: triggers reliably on mount (when adding) and when date changes
+    useEffect(() => {
+        if (isAdding && formData.creationDate) {
+            const d = new Date(formData.creationDate);
+            if (!isNaN(d.getTime())) {
+                const wk = getWeek(d).toString().padStart(2, '0');
+                const yr = d.getFullYear();
+                const parts = formData.uniqueNumber ? formData.uniqueNumber.split('-') : [];
+
+                // Preserve the name if it exists (so editing the date doesn't reroll the name), else generate a new one
+                const namePart = (parts.length === 3 && parts[2]) ? parts[2] : CHRISTIAN_NAMES[Math.floor(Math.random() * CHRISTIAN_NAMES.length)];
+
+                const expectedName = `${wk}-${yr}-${namePart}`;
+                if (formData.uniqueNumber !== expectedName) {
+                    setFormData(prev => ({ ...prev, uniqueNumber: expectedName }));
+                }
+            }
+        }
+    }, [formData.creationDate, isAdding, formData.uniqueNumber]);
 
     const handleAddClick = () => {
         const today = new Date().toISOString().split('T')[0];
         setFormData({
-            uniqueNumber: generateBedName(today),
+            uniqueNumber: '', // Let useEffect generate this reliably
             capacityKg: 0,
             areaM2: 0,
             creationDate: today
@@ -60,19 +72,7 @@ export const DryingBedsSetup: React.FC<DryingBedsSetupProps> = ({ beds, onAddBed
     };
 
     const handleDateChange = (newDate: string) => {
-        const d = new Date(newDate);
-        if (!isNaN(d.getTime())) {
-            const wk = getWeek(d).toString().padStart(2, '0');
-            const yr = d.getFullYear();
-
-            // Try to preserve the existing name part if it matches our pattern, otherwise pick a new one
-            const parts = formData.uniqueNumber.split('-');
-            const namePart = parts.length === 3 ? parts[2] : CHRISTIAN_NAMES[Math.floor(Math.random() * CHRISTIAN_NAMES.length)];
-
-            setFormData({ ...formData, creationDate: newDate, uniqueNumber: `${wk}-${yr}-${namePart}` });
-        } else {
-            setFormData({ ...formData, creationDate: newDate });
-        }
+        setFormData(prev => ({ ...prev, creationDate: newDate }));
     };
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -141,6 +141,7 @@ export const DryingBedsSetup: React.FC<DryingBedsSetupProps> = ({ beds, onAddBed
                                 type="number"
                                 required
                                 min="1"
+                                placeholder="1536"
                                 value={formData.capacityKg || ''}
                                 onChange={e => setFormData({ ...formData, capacityKg: parseInt(e.target.value) || 0 })}
                                 className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-gray-900 dark:text-white focus:ring-1 focus:ring-green-500 outline-none"
@@ -153,6 +154,7 @@ export const DryingBedsSetup: React.FC<DryingBedsSetupProps> = ({ beds, onAddBed
                                 step="0.1"
                                 required
                                 min="0.1"
+                                placeholder="18"
                                 value={formData.areaM2 || ''}
                                 onChange={e => setFormData({ ...formData, areaM2: parseFloat(e.target.value) || 0 })}
                                 className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-gray-900 dark:text-white focus:ring-1 focus:ring-green-500 outline-none"

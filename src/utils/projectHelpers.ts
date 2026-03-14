@@ -73,12 +73,10 @@ export const createNewProject = (name: string, tier: 'HIGH_COMMERCIAL' | 'TARGET
     isMachineDrying: false,
     dryingBedIds: [],
     targetMoisturePercentage: 11.5,
-    // FIX: Initialize to 0 so the UI placeholder "Enter contracted mass..." can show
     requiredGreenBeanMassKg: 0,
     exchangeRateUGXtoUSD: 3750,
     targetSalePricePerKg: 0,
     targetSalePriceCurrency: 'USD',
-    // Initialize cherry cost fields
     estCostPerKgCherry: 0,
     estCostPerKgCherryCurrency: 'USD',
     estCostPerKgCherryUSD: 0,
@@ -86,17 +84,15 @@ export const createNewProject = (name: string, tier: 'HIGH_COMMERCIAL' | 'TARGET
     clientId: null,
     financierIds: [],
     preProjectChecklist: { contractSigned: false, accountCardSubmitted: false, projectSetupComplete: false, forecastGenerated: false, firstWithdrawalReceived: false, projectStarted: false },
-    farmers: [],
     farmerIds: [],
     setupCosts: [],
     advances: [],
     deliveries: [],
-    processingPipeline: ['RECEPTION', 'FLOATING', 'DESICCATION', 'RESTING'], // NEW
-    processingBatches: [], // NEW
-    dryingBatches: [],
-    storedBatches: [],
-    hullingBatches: [],
-    hulledBatches: [],
+
+    // Unified State Machine Arrays
+    processingPipeline: ['RECEPTION', 'FLOATING', 'DESICCATION', 'RESTING'],
+    processingBatches: [],
+
     sales: [],
     financing: [],
     clientDetails: { ...defaultClientDetails, id: crypto.randomUUID() }
@@ -111,18 +107,20 @@ export const getRecalculatedDryingBeds = (project: Project, allDryingBeds: Dryin
     const totalRequiredCherryMass = project.requiredGreenBeanMassKg * project.estShrinkFactor;
     const totalDeliveredCherryMass = project.deliveries.reduce((sum, d) => sum + d.weight, 0);
     const remainingCherriesToBuy = Math.max(0, totalRequiredCherryMass - totalDeliveredCherryMass);
-    const dryingBatchDeliveryIds = new Set(project.dryingBatches.map(db => db.deliveryId));
-    const undriedCherryMass = project.deliveries
-        .filter(d => !dryingBatchDeliveryIds.has(d.id))
-        .reduce((sum, d) => sum + d.weight, 0);
+
+    // Calculate undried cherry mass (Unassigned delivery weight + weight of batches not yet at Desiccation)
+    const assignedCherryWeight = project.processingBatches.reduce((sum, b) => sum + (b.traceabilitySnapshot || []).reduce((s, snap) => s + snap.weightKg, 0), 0);
+    const unassignedCherryMass = Math.max(0, totalDeliveredCherryMass - assignedCherryWeight);
+    const preDesiccationBatchMass = project.processingBatches.filter(b => b.currentStage === 'RECEPTION' || b.currentStage === 'FLOATING').reduce((sum, b) => sum + b.weight, 0);
+
+    const undriedCherryMass = unassignedCherryMass + preDesiccationBatchMass;
     const requiredFutureCapacity = remainingCherriesToBuy + undriedCherryMass;
 
     // 2. Greedy algorithm to find beds to keep
     const assignedBeds = project.dryingBedIds
         .map(id => allDryingBeds.find(b => b.id === id))
         .filter((b): b is DryingBed => !!b)
-        .sort((a, b) => b.capacityKg - a.capacityKg);
-    // Sort descending by capacity
+        .sort((a, b) => b.capacityKg - a.capacityKg); // Sort descending by capacity
 
     const bedsToKeep: DryingBed[] = [];
     let capacityMet = 0;

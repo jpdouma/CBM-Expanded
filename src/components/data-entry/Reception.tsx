@@ -1,3 +1,4 @@
+// ==> src/components/data-entry/Reception.tsx <==
 import React, { useState, useMemo } from 'react';
 import { useProjects } from '../../context/ProjectProvider';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/card';
@@ -21,7 +22,8 @@ export const Reception: React.FC = () => {
 
     const project = state.projects.find(p => p.id === projectId);
     const farmers = state.farmers.filter(f => project?.farmerIds.includes(f.id));
-    const openContainers = state.containers?.filter(c => c.status === 'OPEN') || [];
+    // FIXED: Changed 'OPEN' to 'IN_USE' to match the strict Container status type
+    const openContainers = state.containers?.filter(c => c.status === 'IN_USE') || [];
 
     const activePrices = useMemo(() => {
         const today = new Date(date).getTime();
@@ -41,15 +43,15 @@ export const Reception: React.FC = () => {
         const ov = (parseFloat(overRipe) || 0) / 100;
 
         return (w * u * activePrices.unripe) +
-               (w * e * activePrices.earlyRipe) +
-               (w * o * activePrices.optimal) +
-               (w * ov * activePrices.overRipe);
+            (w * e * activePrices.earlyRipe) +
+            (w * o * activePrices.optimal) +
+            (w * ov * activePrices.overRipe);
     }, [activePrices, weight, unripe, earlyRipe, optimal, overRipe]);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        
         const totalPercentage = (parseFloat(unripe) || 0) + (parseFloat(earlyRipe) || 0) + (parseFloat(optimal) || 0) + (parseFloat(overRipe) || 0);
+
         if (Math.abs(totalPercentage - 100) > 0.1) {
             alert("Percentages must add up to 100%");
             return;
@@ -189,8 +191,8 @@ export const Reception: React.FC = () => {
                                                 <p className="font-bold text-blue-900">{container.label}</p>
                                                 <p className="text-sm text-blue-700">{container.weight.toFixed(1)}kg / 48.0kg</p>
                                             </div>
-                                            <Button 
-                                                variant="outline" 
+                                            <Button
+                                                variant="outline"
                                                 size="sm"
                                                 className="text-blue-700 border-blue-200 hover:bg-blue-100"
                                                 onClick={() => {
@@ -203,8 +205,8 @@ export const Reception: React.FC = () => {
                                             </Button>
                                         </div>
                                         <div className="w-full bg-blue-100 rounded-full h-2">
-                                            <div 
-                                                className="bg-blue-600 h-2 rounded-full transition-all" 
+                                            <div
+                                                className="bg-blue-600 h-2 rounded-full transition-all"
                                                 style={{ width: `${Math.min(100, (container.weight / 48) * 100)}%` }}
                                             />
                                         </div>

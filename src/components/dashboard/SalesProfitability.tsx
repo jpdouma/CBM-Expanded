@@ -1,3 +1,4 @@
+// ==> src/components/dashboard/SalesProfitability.tsx <==
 import React, { useMemo } from 'react';
 import type { Project, Sale } from '../../types';
 import { formatDate } from '../../utils/formatters';
@@ -27,12 +28,12 @@ export const SalesProfitability: React.FC<SalesProfitabilityProps> = ({ projects
         salesData.forEach(sale => {
             totalRevenue += sale.totalSaleAmountUSD;
             totalCost += sale.totalCostUSD;
-            // Calculate total volume sold in this sale
+            // Calculate total volume sold in this sale from unified processing batches
             const project = projects.find(p => p.id === sale.projectId);
             if (project) {
-                (sale.hulledBatchIds || []).forEach(id => {
-                    const batch = (project.hulledBatches || []).find(b => b.id === id);
-                    if (batch) totalVolume += batch.greenBeanWeight;
+                (sale.processingBatchIds || []).forEach(id => {
+                    const batch = (project.processingBatches || []).find(b => b.id === id);
+                    if (batch) totalVolume += batch.weight;
                 });
             }
         });

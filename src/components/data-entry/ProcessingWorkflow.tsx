@@ -195,18 +195,19 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
     const [selectedBatchIds, setSelectedBatchIds] = useState<string[]>([]);
     const [selectedContainerIds, setSelectedContainerIds] = useState<string[]>([]);
     const [selectedBedId, setSelectedBedId] = useState<string>('');
+    const [selectedTankId, setSelectedTankId] = useState<string>('');
     const [inlineBedSelections, setInlineBedSelections] = useState<Record<string, string>>({});
 
     // New states for the inline container assignment workflow (Reception)
     const [assigningDeliveryId, setAssigningDeliveryId] = useState<string | null>(null);
     const [assignmentSelectedCrates, setAssignmentSelectedCrates] = useState<string[]>([]);
 
-    // New states for the inline Floating Split panel
+    // Phase 3: Scale Interface States for Floating
     const [floatingBatchId, setFloatingBatchId] = useState<string | null>(null);
-    const [floatingSinkerWeight, setFloatingSinkerWeight] = useState('');
-    const [floatingFloaterWeight, setFloatingFloaterWeight] = useState('');
-    const [floatingSinkerCrates, setFloatingSinkerCrates] = useState<string[]>([]);
-    const [floatingFloaterCrates, setFloatingFloaterCrates] = useState<string[]>([]);
+    const [scaleActiveContainerId, setScaleActiveContainerId] = useState<string | null>(null);
+    const [scaleGrossWeight, setScaleGrossWeight] = useState<string>('');
+    const [sinkerReadings, setSinkerReadings] = useState<{ containerId: string, netWeight: number }[]>([]);
+    const [floaterReadings, setFloaterReadings] = useState<{ containerId: string, netWeight: number }[]>([]);
 
     // New states for the inline Merge Batches panel
     const [isMerging, setIsMerging] = useState(false);
@@ -214,6 +215,7 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
 
     const [moistureInputs, setMoistureInputs] = useState<Record<string, string>>({});
     const [moistureDates, setMoistureDates] = useState<Record<string, string>>({});
+
     const [harvestingBatchId, setHarvestingBatchId] = useState<string | null>(null);
     const [harvestWeight, setHarvestWeight] = useState('');
 
@@ -230,7 +232,7 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
     const activeStageOrder = useMemo(() => {
         return project.processingPipeline && project.processingPipeline.length > 0
             ? project.processingPipeline
-            : ['RECEPTION', 'FLOATING', 'DESICCATION', 'RESTING'];
+            : (['RECEPTION', 'FLOATING', 'DESICCATION', 'RESTING'] as ProcessingStage[]);
     }, [project.processingPipeline]);
 
     const isTier1 = project.tier === 'HIGH_COMMERCIAL';
@@ -270,6 +272,13 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
         setFloatingBatchId(null);
         setIsMerging(false);
         setMergeSelectedCrates([]);
+        setSelectedTankId('');
+
+        // Reset Phase 3 Scale states
+        setSinkerReadings([]);
+        setFloaterReadings([]);
+        setScaleActiveContainerId(null);
+        setScaleGrossWeight('');
     };
 
     const handleGlobalCollapseToggle = () => {
@@ -303,6 +312,7 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
 
         if (selectedContainerIds.length === 0) return;
         if (requiresBedForInit && !selectedBedId) return;
+        if (initialStage === 'FLOATING' && !selectedTankId) return;
 
         if (initialStage === 'DESICCATION') {
             dispatch({
@@ -317,6 +327,7 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                     containerIds: selectedContainerIds,
                     initialStage: initialStage,
                     dryingBedId: requiresBedForInit ? selectedBedId : undefined,
+                    floatingTankId: initialStage === 'FLOATING' ? selectedTankId : undefined,
                     startDate: new Date().toISOString().split('T')[0]
                 }
             });
@@ -324,6 +335,7 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
 
         setSelectedContainerIds([]);
         setSelectedBedId('');
+        setSelectedTankId('');
     };
 
     const handleMoveToNextStage = (batchId: string, assignedBedId?: string) => {
@@ -345,27 +357,25 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
     };
 
     const handleConfirmFloating = (batchId: string) => {
-        if (!floatingSinkerWeight || floatingSinkerCrates.length === 0) return;
+        if (sinkerReadings.length === 0) return;
 
         dispatch({
             type: 'COMPLETE_FLOATING',
             payload: {
                 projectId: project.id,
                 batchId,
-                sinkerWeight: parseFloat(floatingSinkerWeight) || 0,
-                floaterWeight: parseFloat(floatingFloaterWeight) || 0,
-                sinkerContainerIds: floatingSinkerCrates,
-                floaterContainerIds: floatingFloaterCrates,
+                sinkerReadings,
+                floaterReadings,
                 completedBy: 'System User',
                 endDate: new Date().toISOString().split('T')[0]
             }
         });
 
         setFloatingBatchId(null);
-        setFloatingSinkerWeight('');
-        setFloatingFloaterWeight('');
-        setFloatingSinkerCrates([]);
-        setFloatingFloaterCrates([]);
+        setSinkerReadings([]);
+        setFloaterReadings([]);
+        setScaleActiveContainerId(null);
+        setScaleGrossWeight('');
     };
 
     const handleConfirmMerge = () => {
@@ -379,6 +389,7 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                 completedBy: 'System User'
             }
         });
+
         setIsMerging(false);
         setSelectedBatchIds([]);
         setMergeSelectedCrates([]);
@@ -588,7 +599,6 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                         }, 0);
 
                         const remainingNeeded = Math.max(0, totalMergeWeight - selectedMergeCapacity);
-
                         return (
                             <div className="bg-purple-50/50 dark:bg-purple-900/10 border-b border-purple-100 dark:border-purple-800/50 p-6 animate-in slide-in-from-top-2">
                                 <div className="flex flex-col xl:flex-row gap-6">
@@ -736,7 +746,6 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                             const availableCrates = state.containers
                                                 .filter(c => c.status === 'AVAILABLE' || (c.status === 'IN_USE' && c.weight < 48))
                                                 .sort((a, b) => b.weight - a.weight);
-
                                             const isAssigning = assigningDeliveryId === d.id;
 
                                             // Calculate dynamic capacity math for the active panel
@@ -835,7 +844,6 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                                                 const isSelected = assignmentSelectedCrates.includes(c.id);
                                                                                 const isPartial = c.weight > 0;
                                                                                 const availableSpace = 48 - c.weight;
-
                                                                                 return (
                                                                                     <div
                                                                                         key={c.id}
@@ -911,10 +919,8 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                             const initialStageAfterReception = activeStageOrder.length > activeStageOrder.indexOf('RECEPTION') + 1 ? activeStageOrder[activeStageOrder.indexOf('RECEPTION') + 1] : 'FLOATING';
                                             const isGoingToWater = initialStageAfterReception === 'FLOATING';
                                             const requiresBedForInit = initialStageAfterReception === 'DESICCATION';
-
                                             const selectedContainersWeight = state.containers.filter(c => selectedContainerIds.includes(c.id)).reduce((sum, c) => sum + c.weight, 0);
                                             const availableBedsForInit = getAvailableBeds(selectedContainersWeight);
-
                                             return (
                                                 <div className="flex flex-col gap-6">
                                                     <div>
@@ -935,9 +941,21 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                                 </span>
                                                             </div>
 
+                                                            <Button
+                                                                onClick={handleInitializeBatch}
+                                                                disabled={
+                                                                    selectedContainerIds.length === 0 ||
+                                                                    (requiresBedForInit && !selectedBedId) ||
+                                                                    (isGoingToWater && !selectedTankId)
+                                                                }
+                                                                className="w-full h-12 bg-brand-blue hover:opacity-90 text-white font-bold px-8 rounded-xl shadow-md disabled:opacity-50"
+                                                            >
+                                                                {isGoingToWater ? 'Initialize Floating Batch' : 'Dump Crates to Bed'}
+                                                            </Button>
+
                                                             {requiresBedForInit && (
                                                                 <div className="w-full mt-2">
-                                                                    <Label className="text-[10px] font-bold text-gray-400 uppercase mb-1.5 block">Target Drying Bed</Label>
+                                                                    <Label className="text-[10px] font-bold text-gray-400 uppercase mb-1.5 block">Target Drying Bed *</Label>
                                                                     <Select value={selectedBedId} onValueChange={setSelectedBedId}>
                                                                         <SelectTrigger className="bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 h-11 shadow-sm">
                                                                             <SelectValue placeholder="Select Bed..." />
@@ -951,13 +969,44 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                                 </div>
                                                             )}
 
-                                                            <Button
-                                                                onClick={handleInitializeBatch}
-                                                                disabled={selectedContainerIds.length === 0 || (requiresBedForInit && !selectedBedId)}
-                                                                className="w-full mt-auto h-12 bg-brand-blue hover:opacity-90 text-white font-bold px-8 rounded-xl shadow-md disabled:opacity-50"
-                                                            >
-                                                                {isGoingToWater ? 'Initialize Floating Batch' : 'Dump Crates to Bed'}
-                                                            </Button>
+                                                            {isGoingToWater && (
+                                                                <div className="w-full mt-2">
+                                                                    <Label className="text-[10px] font-bold text-gray-400 uppercase mb-1.5 block">Target Floating Tank *</Label>
+                                                                    <Select value={selectedTankId} onValueChange={setSelectedTankId}>
+                                                                        <SelectTrigger className="bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 h-11 shadow-sm">
+                                                                            <SelectValue placeholder="Select Tank..." />
+                                                                        </SelectTrigger>
+                                                                        <SelectContent className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+                                                                            {(state.floatingTanks || []).map(tank => (
+                                                                                <SelectItem key={tank.id} value={tank.id}>{tank.name} ({tank.capacityKg}kg)</SelectItem>
+                                                                            ))}
+                                                                        </SelectContent>
+                                                                    </Select>
+                                                                    {selectedTankId && (() => {
+                                                                        const tank = (state.floatingTanks || []).find(t => t.id === selectedTankId);
+                                                                        if (!tank) return null;
+                                                                        const pct = (selectedContainersWeight / tank.capacityKg) * 100;
+                                                                        const over = selectedContainersWeight > tank.capacityKg;
+                                                                        return (
+                                                                            <div className="mt-3 space-y-1">
+                                                                                <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider">
+                                                                                    <span className={over ? 'text-brand-red' : 'text-gray-500'}>Capacity</span>
+                                                                                    <span className={over ? 'text-brand-red' : 'text-brand-blue'}>
+                                                                                        {selectedContainersWeight.toFixed(1)} / {tank.capacityKg} kg
+                                                                                    </span>
+                                                                                </div>
+                                                                                <div className="w-full bg-gray-200 dark:bg-gray-700 h-1.5 rounded-full overflow-hidden">
+                                                                                    <div
+                                                                                        className={`h-full transition-all ${over ? 'bg-brand-red' : 'bg-brand-blue'}`}
+                                                                                        style={{ width: `${Math.min(pct, 100)}%` }}
+                                                                                    />
+                                                                                </div>
+                                                                                {over && <p className="text-[10px] text-brand-red font-medium flex items-center gap-1 mt-1"><AlertCircle className="w-3 h-3" /> Exceeds limit</p>}
+                                                                            </div>
+                                                                        );
+                                                                    })()}
+                                                                </div>
+                                                            )}
                                                         </div>
 
                                                         {/* RIGHT PANE: Horizontally Scrolling Crate Stack */}
@@ -1077,7 +1126,6 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                 main: { facility: '', zone: '', row: '', pallet: '', level: '' },
                                                 rem: { facility: '', zone: '', row: '', pallet: '', level: '' }
                                             };
-
                                             const updatePutAwayForm = (updater: (prev: PutAwayFormState) => PutAwayFormState) => {
                                                 setPutAwayForms(prev => ({ ...prev, [batch.id]: updater(prev[batch.id] || putAwayForm) }));
                                             };
@@ -1108,7 +1156,6 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                 const latestLog = sortedLogs[sortedLogs.length - 1];
                                                 lastMoisture = latestLog?.percentage;
                                                 isReadyToHarvest = !!lastMoisture && Math.abs(lastMoisture - target) <= 0.5;
-
                                                 desiccationStart = batch.history.find(h => h.stage === 'DESICCATION')?.startDate;
                                                 const latestDate = latestLog ? new Date(latestLog.date) : new Date();
                                                 daysDrying = desiccationStart ? Math.max(0, dayDiff(new Date(desiccationStart), latestDate)) : 0;
@@ -1117,9 +1164,7 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                 const targetMDec = target / 100;
                                                 const currMDec = currMoisture / 100;
                                                 const sf = project.estShrinkFactor || 6.25;
-
                                                 yieldPct = (1 / sf) * ((1 - targetMDec) / (1 - currMDec)) * 100;
-
                                                 const highestLog = sortedLogs.length > 0 ? Math.max(...sortedLogs.map(l => l.percentage)) : 50;
                                                 const InitialMoisture = Math.max(50, highestLog);
                                                 const CurrentMoisture = lastMoisture || InitialMoisture;
@@ -1139,7 +1184,6 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
 
                                             // Guard: Cannot effectively collapse if ready to harvest
                                             const isEffectivelyCollapsed = isDesiccation && isBedAssigned && collapsedBatches.has(batch.id) && !isReadyToHarvest;
-
                                             return (
                                                 <div
                                                     key={batch.id}
@@ -1234,11 +1278,11 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                                                             </Badge>
                                                                                         )}
                                                                                     </div>
-                                                                                    <span className="text-sm font-bold text-gray-400 font-mono tracking-tight">Batch #{batch.id.slice(0, 8)}</span>
+                                                                                    <span className="text-sm font-bold text-gray-400 font-mono tracking-tight">{batch.id}</span>
                                                                                 </>
                                                                             ) : (
                                                                                 <div className="flex items-center gap-3 mb-1">
-                                                                                    <span className="font-black text-brand-dark dark:text-white text-lg tracking-tight">Batch #{batch.id.slice(0, 8)}</span>
+                                                                                    <span className="font-black text-brand-dark dark:text-white text-lg tracking-tight">{batch.id}</span>
                                                                                     <Badge className="bg-gray-50 dark:bg-gray-900 text-brand-blue border border-brand-blue/30 font-bold px-2 py-0.5 whitespace-nowrap">
                                                                                         {batch.weight.toFixed(1)}kg
                                                                                     </Badge>
@@ -1262,6 +1306,12 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                                                     Bed: {state.dryingBeds.find(b => b.id === batch.dryingBedId)?.uniqueNumber || 'Unknown'}
                                                                                 </span>
                                                                             ) : null}
+                                                                            {batch.floatingTankId && (
+                                                                                <span className="flex items-center gap-1.5 text-cyan-600 dark:text-cyan-400">
+                                                                                    <Waves className="w-3 h-3" />
+                                                                                    Tank: {state.floatingTanks?.find(t => t.id === batch.floatingTankId)?.name || 'Unknown'}
+                                                                                </span>
+                                                                            )}
                                                                             <span className="flex items-center gap-1.5">
                                                                                 <Clock className="w-3 h-3" />
                                                                                 {formatDate(new Date(batch.history[batch.history.length - 1]?.startDate || Date.now()))}
@@ -1534,7 +1584,6 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                                                 {(() => {
                                                                                     const maxM = Math.max(50, sortedLogs[0]?.percentage || 50); // Absolute 0-50% scale
                                                                                     const targetY = 100 - ((target / maxM) * 100);
-
                                                                                     return (
                                                                                         <>
                                                                                             {/* Target Line */}
@@ -1546,12 +1595,10 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                                                                 const prevLog = sortedLogs[i - 1];
                                                                                                 const prevDays = desiccationStart ? Math.max(0, dayDiff(new Date(desiccationStart), new Date(prevLog.date))) : 0;
                                                                                                 const currDays = desiccationStart ? Math.max(0, dayDiff(new Date(desiccationStart), new Date(log.date))) : 0;
-
                                                                                                 const x1 = Math.min(100, Math.max(0, (prevDays / 30) * 100)); // 0-30 days scale
                                                                                                 const y1 = Math.min(100, Math.max(0, 100 - ((prevLog.percentage / maxM) * 100)));
                                                                                                 const x2 = Math.min(100, Math.max(0, (currDays / 30) * 100));
                                                                                                 const y2 = Math.min(100, Math.max(0, 100 - ((log.percentage / maxM) * 100)));
-
                                                                                                 return (
                                                                                                     <line
                                                                                                         key={`line-${i}`}
@@ -1693,7 +1740,7 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                                 </div>
                                                             )}
 
-                                                            {/* INLINE FLOATING PANEL - SPLIT PANE LAYOUT */}
+                                                            {/* Phase 3: INLINE FLOATING PANEL - QUEUE LAYOUT */}
                                                             {floatingBatchId === batch.id && (() => {
                                                                 const floatingAvailableCrates = state.containers
                                                                     .filter(c => c.status === 'AVAILABLE' || batch.containerIds.includes(c.id))
@@ -1704,206 +1751,153 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                                         return b.weight - a.weight;
                                                                     });
 
-                                                                // Dynamic Capacity Math Logic
-                                                                const sinkerWeightNum = parseFloat(floatingSinkerWeight) || 0;
-                                                                const floaterWeightNum = parseFloat(floatingFloaterWeight) || 0;
+                                                                const activeContainer = state.containers.find(c => c.id === scaleActiveContainerId);
+                                                                const grossWeightNum = parseFloat(scaleGrossWeight) || 0;
+                                                                const defaultTare = state.globalSettings?.defaultContainerTareWeight || 1.5;
+                                                                const tare = activeContainer?.tareWeightKg || defaultTare;
+                                                                const netWeight = Math.max(0, grossWeightNum - tare);
 
-                                                                const sinkerCapacity = floatingSinkerCrates.reduce((sum, cid) => {
-                                                                    const c = state.containers.find(x => x.id === cid);
-                                                                    if (!c) return sum;
-                                                                    const effectiveWeight = batch.containerIds.includes(c.id) ? 0 : c.weight;
-                                                                    return sum + (48 - effectiveWeight);
-                                                                }, 0);
-                                                                const sinkerRemaining = Math.max(0, sinkerWeightNum - sinkerCapacity);
+                                                                const totalSinkerNet = sinkerReadings.reduce((sum, r) => sum + r.netWeight, 0);
+                                                                const totalFloaterNet = floaterReadings.reduce((sum, r) => sum + r.netWeight, 0);
 
-                                                                const floaterCapacity = floatingFloaterCrates.reduce((sum, cid) => {
-                                                                    const c = state.containers.find(x => x.id === cid);
-                                                                    if (!c) return sum;
-                                                                    const effectiveWeight = batch.containerIds.includes(c.id) ? 0 : c.weight;
-                                                                    return sum + (48 - effectiveWeight);
-                                                                }, 0);
-                                                                const floaterRemaining = Math.max(0, floaterWeightNum - floaterCapacity);
+                                                                const handleLogSinker = () => {
+                                                                    if (!scaleActiveContainerId || netWeight <= 0) return;
+                                                                    setSinkerReadings(prev => [...prev, { containerId: scaleActiveContainerId, netWeight }]);
+                                                                    setScaleActiveContainerId(null);
+                                                                    setScaleGrossWeight('');
+                                                                };
 
-                                                                const isReadyToConfirm =
-                                                                    floatingSinkerWeight &&
-                                                                    floatingSinkerCrates.length > 0 &&
-                                                                    sinkerRemaining === 0 &&
-                                                                    (floaterWeightNum === 0 || floaterRemaining === 0);
+                                                                const handleLogFloater = () => {
+                                                                    if (!scaleActiveContainerId || netWeight <= 0) return;
+                                                                    setFloaterReadings(prev => [...prev, { containerId: scaleActiveContainerId, netWeight }]);
+                                                                    setScaleActiveContainerId(null);
+                                                                    setScaleGrossWeight('');
+                                                                };
 
                                                                 return (
                                                                     <div className="flex flex-col xl:flex-row gap-6 bg-cyan-50/50 dark:bg-cyan-900/10 p-5 mt-4 rounded-xl border border-cyan-100 dark:border-cyan-800 animate-in slide-in-from-top-2">
-                                                                        {/* LEFT PANE */}
+                                                                        {/* LEFT PANE: Scale Interface */}
                                                                         <div className="w-full xl:w-72 flex-shrink-0 flex flex-col gap-4">
-                                                                            <h4 className="text-sm font-bold text-brand-dark dark:text-white">1. Enter Scale Weights</h4>
+                                                                            <h4 className="text-sm font-bold text-brand-dark dark:text-white">1. Scale Interface</h4>
 
-                                                                            <div className="space-y-4">
-                                                                                <div>
-                                                                                    <Label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 block">Sinker Weight (kg) - Good</Label>
-                                                                                    <Input
-                                                                                        type="number"
-                                                                                        value={floatingSinkerWeight}
-                                                                                        onChange={(e) => {
-                                                                                            const val = e.target.value;
-                                                                                            setFloatingSinkerWeight(val);
-                                                                                            const weightNum = parseFloat(val) || 0;
-                                                                                            if (weightNum > 0) {
-                                                                                                // Calculate crates needed (max 48kg per crate)
-                                                                                                const cratesNeeded = Math.ceil(weightNum / 48);
-                                                                                                // Auto-select from the original basin crates
-                                                                                                setFloatingSinkerCrates(batch.containerIds.slice(0, cratesNeeded));
-                                                                                            } else {
-                                                                                                setFloatingSinkerCrates([]);
-                                                                                            }
-                                                                                        }}
-                                                                                        className="bg-white dark:bg-gray-900 border-cyan-200 dark:border-cyan-800 font-bold text-lg"
-                                                                                        placeholder="e.g. 200"
-                                                                                    />
-                                                                                </div>
-                                                                                <div>
-                                                                                    <Label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 block">Floater Weight (kg) - Loss</Label>
-                                                                                    <Input
-                                                                                        type="number"
-                                                                                        value={floatingFloaterWeight}
-                                                                                        onChange={(e) => setFloatingFloaterWeight(e.target.value)}
-                                                                                        className="bg-white dark:bg-gray-900 border-cyan-200 dark:border-cyan-800 font-bold text-lg"
-                                                                                        placeholder="e.g. 40"
-                                                                                    />
-                                                                                </div>
+                                                                            <div className="bg-white dark:bg-gray-900 p-4 rounded-xl border border-cyan-200 dark:border-cyan-800 shadow-sm flex flex-col gap-4 min-h-[220px]">
+                                                                                {activeContainer ? (
+                                                                                    <>
+                                                                                        <div className="flex justify-between items-center border-b border-gray-100 dark:border-gray-800 pb-2">
+                                                                                            <span className="font-bold text-brand-dark dark:text-white font-mono">{activeContainer.label}</span>
+                                                                                            <span className="text-xs text-gray-500 font-mono">Tare: {tare.toFixed(1)} kg</span>
+                                                                                        </div>
+                                                                                        <div>
+                                                                                            <Label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-1.5 block">Gross Weight (kg)</Label>
+                                                                                            <Input
+                                                                                                type="number"
+                                                                                                value={scaleGrossWeight}
+                                                                                                onChange={(e) => setScaleGrossWeight(e.target.value)}
+                                                                                                autoFocus
+                                                                                                className="text-lg font-bold"
+                                                                                                placeholder="e.g. 48.5"
+                                                                                            />
+                                                                                        </div>
+                                                                                        <div className="flex justify-between items-center bg-gray-50 dark:bg-gray-800 p-2 rounded">
+                                                                                            <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">Net Weight</span>
+                                                                                            <span className="text-lg font-black text-cyan-600 dark:text-cyan-400">{netWeight > 0 ? netWeight.toFixed(2) : '0.00'} kg</span>
+                                                                                        </div>
+                                                                                        <div className="grid grid-cols-2 gap-2 mt-auto pt-2">
+                                                                                            <Button
+                                                                                                disabled={netWeight <= 0}
+                                                                                                onClick={handleLogSinker}
+                                                                                                className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold h-10"
+                                                                                            >
+                                                                                                Log Sinker
+                                                                                            </Button>
+                                                                                            <Button
+                                                                                                disabled={netWeight <= 0}
+                                                                                                onClick={handleLogFloater}
+                                                                                                className="bg-orange-500 hover:bg-orange-600 text-white font-bold h-10"
+                                                                                            >
+                                                                                                Log Floater
+                                                                                            </Button>
+                                                                                        </div>
+                                                                                    </>
+                                                                                ) : (
+                                                                                    <div className="flex-1 flex items-center justify-center text-center p-4 text-gray-500 text-sm">
+                                                                                        Select an empty container from the queue to begin weighing.
+                                                                                    </div>
+                                                                                )}
                                                                             </div>
 
                                                                             <div className="space-y-2 mt-2 mb-4">
                                                                                 <div className="flex justify-between items-center bg-white dark:bg-gray-900 p-2.5 rounded-lg border border-cyan-200 dark:border-cyan-800 shadow-sm">
-                                                                                    <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Sinker Cap</span>
-                                                                                    <span className="font-black text-cyan-600 dark:text-cyan-400">{sinkerCapacity.toFixed(1)} kg</span>
+                                                                                    <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total Sinkers</span>
+                                                                                    <span className="font-black text-cyan-600 dark:text-cyan-400">{totalSinkerNet.toFixed(1)} kg</span>
                                                                                 </div>
-                                                                                <div className="flex justify-between items-center bg-white dark:bg-gray-900 p-2.5 rounded-lg border border-cyan-200 dark:border-cyan-800 shadow-sm">
-                                                                                    <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Sinker Need</span>
-                                                                                    <span className={`font-black ${sinkerRemaining > 0 ? 'text-brand-red' : 'text-green-500'}`}>{sinkerRemaining.toFixed(1)} kg</span>
+                                                                                <div className="flex justify-between items-center bg-white dark:bg-gray-900 p-2.5 rounded-lg border border-orange-200 dark:border-orange-800 shadow-sm">
+                                                                                    <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total Floaters</span>
+                                                                                    <span className="font-black text-orange-600 dark:text-orange-400">{totalFloaterNet.toFixed(1)} kg</span>
                                                                                 </div>
-
-                                                                                {floaterWeightNum > 0 && (
-                                                                                    <>
-                                                                                        <div className="flex justify-between items-center bg-white dark:bg-gray-900 p-2.5 rounded-lg border border-orange-200 dark:border-orange-800 shadow-sm mt-4">
-                                                                                            <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Floater Cap</span>
-                                                                                            <span className="font-black text-orange-600 dark:text-orange-400">{floaterCapacity.toFixed(1)} kg</span>
-                                                                                        </div>
-                                                                                        <div className="flex justify-between items-center bg-white dark:bg-gray-900 p-2.5 rounded-lg border border-orange-200 dark:border-orange-800 shadow-sm">
-                                                                                            <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Floater Need</span>
-                                                                                            <span className={`font-black ${floaterRemaining > 0 ? 'text-brand-red' : 'text-green-500'}`}>{floaterRemaining.toFixed(1)} kg</span>
-                                                                                        </div>
-                                                                                    </>
-                                                                                )}
                                                                             </div>
 
                                                                             <Button
                                                                                 onClick={() => handleConfirmFloating(batch.id)}
-                                                                                disabled={!isReadyToConfirm}
+                                                                                disabled={sinkerReadings.length === 0}
                                                                                 className="w-full mt-auto bg-cyan-600 hover:bg-cyan-700 text-white font-bold h-12 shadow-md disabled:opacity-50 transition-all"
                                                                             >
                                                                                 Confirm Floating Split
                                                                             </Button>
                                                                         </div>
 
-                                                                        {/* RIGHT PANE */}
+                                                                        {/* RIGHT PANE: Weighing Queue */}
                                                                         <div className="flex-1 min-w-0 flex flex-col gap-6 xl:border-l xl:border-cyan-200 dark:xl:border-cyan-800/50 xl:pl-6">
-                                                                            {/* Sinker Crates */}
                                                                             <div>
-                                                                                <h4 className="text-sm font-bold text-brand-dark dark:text-white mb-2">2. Assign Sinker Crates (Good)</h4>
-                                                                                <div className="grid grid-rows-2 grid-flow-col gap-3 overflow-x-auto pb-2 custom-scrollbar">
-                                                                                    {floatingAvailableCrates.filter(c => !floatingFloaterCrates.includes(c.id)).map(c => {
-                                                                                        const isSelected = floatingSinkerCrates.includes(c.id);
+                                                                                <h4 className="text-sm font-bold text-brand-dark dark:text-white mb-2">2. Weighing Queue</h4>
+                                                                                <div className="grid grid-rows-3 grid-flow-col gap-3 overflow-x-auto pb-2 custom-scrollbar">
+                                                                                    {floatingAvailableCrates.map(c => {
+                                                                                        const sinkerRecord = sinkerReadings.find(r => r.containerId === c.id);
+                                                                                        const floaterRecord = floaterReadings.find(r => r.containerId === c.id);
+                                                                                        const isUsed = !!sinkerRecord || !!floaterRecord;
+                                                                                        const isActive = scaleActiveContainerId === c.id;
                                                                                         const isBasin = batch.containerIds.includes(c.id);
-                                                                                        const isPartial = !isBasin && c.weight > 0;
-                                                                                        const availableSpace = isBasin ? 48 : 48 - c.weight;
+
+                                                                                        let borderClass = 'border-gray-200 dark:border-gray-700 hover:border-cyan-300 bg-white dark:bg-gray-900 cursor-pointer';
+                                                                                        if (isActive) borderClass = 'border-cyan-500 bg-cyan-50 dark:bg-cyan-900/30 shadow-md cursor-default';
+                                                                                        else if (sinkerRecord) borderClass = 'border-cyan-500 bg-cyan-50 dark:bg-cyan-900/30 opacity-60 cursor-not-allowed';
+                                                                                        else if (floaterRecord) borderClass = 'border-orange-500 bg-orange-50 dark:bg-orange-900/30 opacity-60 cursor-not-allowed';
+                                                                                        else if (isBasin) borderClass = 'border-cyan-200 dark:border-cyan-800/50 hover:border-cyan-300 bg-white dark:bg-gray-900 cursor-pointer';
 
                                                                                         return (
                                                                                             <div
-                                                                                                key={`sinker-${c.id}`}
-                                                                                                onClick={() => {
-                                                                                                    setFloatingSinkerCrates(prev => {
-                                                                                                        if (prev.includes(c.id)) return prev.filter(id => id !== c.id);
-                                                                                                        return [...prev, c.id]; // No limit, need enough for sinker target
-                                                                                                    });
-                                                                                                }}
-                                                                                                className={`cursor-pointer rounded-xl border-2 p-3 transition-all relative overflow-hidden group w-48 shrink-0 ${isSelected ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-900/30 shadow-sm' :
-                                                                                                    isBasin ? 'border-cyan-200 dark:border-cyan-800/50 hover:border-cyan-300 dark:hover:border-cyan-700 bg-white dark:bg-gray-900' :
-                                                                                                        isPartial ? 'border-amber-400/50 hover:border-amber-400 bg-white dark:bg-gray-900' :
-                                                                                                            'border-gray-200 dark:border-gray-700 hover:border-cyan-300 dark:hover:border-cyan-700 bg-white dark:bg-gray-900'
-                                                                                                    }`}
+                                                                                                key={c.id}
+                                                                                                className={`rounded-xl border-2 p-3 transition-all relative w-48 shrink-0 flex flex-col ${borderClass}`}
+                                                                                                onClick={() => !isUsed && !isActive && setScaleActiveContainerId(c.id)}
                                                                                             >
                                                                                                 <div className="flex justify-between items-start mb-2">
-                                                                                                    <span className={`font-mono text-sm font-bold ${isSelected ? 'text-cyan-600 dark:text-cyan-400' : 'text-brand-dark dark:text-gray-300 group-hover:text-cyan-500'}`}>{c.label}</span>
-                                                                                                    <div className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${isSelected ? 'bg-cyan-500 border-cyan-500' : 'border-gray-300 dark:border-gray-600'}`}>
-                                                                                                        {isSelected && <CheckCircle2 className="w-3 h-3 text-white" />}
-                                                                                                    </div>
+                                                                                                    <span className={`font-mono text-sm font-bold ${isActive ? 'text-cyan-600 dark:text-cyan-400' : 'text-brand-dark dark:text-gray-300'}`}>{c.label}</span>
+                                                                                                    {isUsed && (
+                                                                                                        <div className={`w-4 h-4 rounded-full flex items-center justify-center ${sinkerRecord ? 'bg-cyan-500' : 'bg-orange-500'}`}>
+                                                                                                            <CheckCircle2 className="w-3 h-3 text-white" />
+                                                                                                        </div>
+                                                                                                    )}
                                                                                                 </div>
-
                                                                                                 <div className="space-y-1.5 mt-auto pt-2">
-                                                                                                    <div className="flex justify-between text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400">
-                                                                                                        <span className={isPartial ? 'text-amber-500' : isBasin ? 'text-cyan-600 dark:text-cyan-400' : ''}>
-                                                                                                            {isPartial ? 'Partial Fill' : isBasin ? 'To Be Emptied' : 'Empty'}
+                                                                                                    <div className="flex justify-between text-[10px] uppercase font-bold text-gray-500">
+                                                                                                        <span className={sinkerRecord ? 'text-cyan-600' : floaterRecord ? 'text-orange-600' : isBasin ? 'text-cyan-400' : ''}>
+                                                                                                            {isUsed ? (sinkerRecord ? 'Sinker' : 'Floater') : isBasin ? 'Emptied Basin' : 'Empty'}
                                                                                                         </span>
-                                                                                                        <span className={isSelected ? 'text-cyan-600 dark:text-cyan-400' : 'text-gray-900 dark:text-white'}>{availableSpace.toFixed(1)}kg free</span>
+                                                                                                        <span className="text-gray-900 dark:text-white">
+                                                                                                            {isUsed ? (sinkerRecord?.netWeight || floaterRecord?.netWeight)?.toFixed(1) + 'kg' : ''}
+                                                                                                        </span>
                                                                                                     </div>
-                                                                                                    <div className="w-full bg-gray-100 dark:bg-gray-800 h-1.5 rounded-full overflow-hidden">
-                                                                                                        <div className={`h-full transition-all ${isPartial ? 'bg-amber-400' : 'bg-transparent'}`} style={{ width: `${(c.weight / 48) * 100}%` }} />
-                                                                                                    </div>
+                                                                                                    {isUsed && (
+                                                                                                        <div className="w-full bg-gray-100 dark:bg-gray-800 h-1.5 rounded-full overflow-hidden">
+                                                                                                            <div className={`h-full transition-all ${sinkerRecord ? 'bg-cyan-500' : 'bg-orange-500'}`} style={{ width: `100%` }} />
+                                                                                                        </div>
+                                                                                                    )}
                                                                                                 </div>
                                                                                             </div>
-                                                                                        );
+                                                                                        )
                                                                                     })}
                                                                                 </div>
                                                                             </div>
-
-                                                                            {/* Floater Crates */}
-                                                                            {floaterWeightNum > 0 && (
-                                                                                <div>
-                                                                                    <h4 className="text-sm font-bold text-brand-dark dark:text-white mb-2">3. Assign Floater Crates (Loss)</h4>
-                                                                                    <div className="grid grid-rows-2 grid-flow-col gap-3 overflow-x-auto pb-2 custom-scrollbar">
-                                                                                        {floatingAvailableCrates.filter(c => !floatingSinkerCrates.includes(c.id)).map(c => {
-                                                                                            const isSelected = floatingFloaterCrates.includes(c.id);
-                                                                                            const isBasin = batch.containerIds.includes(c.id);
-                                                                                            const isPartial = !isBasin && c.weight > 0;
-                                                                                            const availableSpace = isBasin ? 48 : 48 - c.weight;
-
-                                                                                            return (
-                                                                                                <div
-                                                                                                    key={`floater-${c.id}`}
-                                                                                                    onClick={() => {
-                                                                                                        setFloatingFloaterCrates(prev => {
-                                                                                                            if (prev.includes(c.id)) return prev.filter(id => id !== c.id);
-                                                                                                            return [...prev, c.id]; // No limit
-                                                                                                        });
-                                                                                                    }}
-                                                                                                    className={`cursor-pointer rounded-xl border-2 p-3 transition-all relative overflow-hidden group w-48 shrink-0 ${isSelected ? 'border-brand-red bg-brand-red/5 shadow-sm' :
-                                                                                                        isBasin ? 'border-orange-200 dark:border-orange-800/50 hover:border-brand-red/30 bg-white dark:bg-gray-900' :
-                                                                                                            isPartial ? 'border-amber-400/50 hover:border-amber-400 bg-white dark:bg-gray-900' :
-                                                                                                                'border-gray-200 dark:border-gray-700 hover:border-brand-red/30 bg-white dark:bg-gray-900'
-                                                                                                        }`}
-                                                                                                >
-                                                                                                    <div className="flex justify-between items-start mb-2">
-                                                                                                        <span className={`font-mono text-sm font-bold ${isSelected ? 'text-brand-red' : 'text-brand-dark dark:text-gray-300 group-hover:text-brand-red'}`}>{c.label}</span>
-                                                                                                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${isSelected ? 'bg-brand-red border-brand-red' : 'border-gray-300 dark:border-gray-600'}`}>
-                                                                                                            {isSelected && <CheckCircle2 className="w-3 h-3 text-white" />}
-                                                                                                        </div>
-                                                                                                    </div>
-                                                                                                    <div className="space-y-1.5 mt-auto pt-2">
-                                                                                                        <div className="flex justify-between text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400">
-                                                                                                            <span className={isPartial ? 'text-amber-500' : isBasin ? 'text-orange-500' : ''}>
-                                                                                                                {isPartial ? 'Partial Fill' : isBasin ? 'Emptied' : 'Empty'}
-                                                                                                            </span>
-                                                                                                            <span className={isSelected ? 'text-brand-red dark:text-red-400' : 'text-gray-900 dark:text-white'}>{availableSpace.toFixed(1)}kg free</span>
-                                                                                                        </div>
-                                                                                                        <div className="w-full bg-gray-100 dark:bg-gray-800 h-1.5 rounded-full overflow-hidden">
-                                                                                                            <div className={`h-full transition-all ${isPartial ? 'bg-amber-400' : 'bg-transparent'}`} style={{ width: `${(c.weight / 48) * 100}%` }} />
-                                                                                                        </div>
-                                                                                                    </div>
-                                                                                                </div>
-                                                                                            );
-                                                                                        })}
-                                                                                    </div>
-                                                                                </div>
-                                                                            )}
                                                                         </div>
                                                                     </div>
                                                                 );

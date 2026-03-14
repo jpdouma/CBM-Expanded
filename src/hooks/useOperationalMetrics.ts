@@ -1,3 +1,4 @@
+// ==> src/hooks/useOperationalMetrics.ts <==
 import { useMemo } from 'react';
 import type { Project, ClientDetails, Farmer } from '../types';
 import { getWeek, dayDiff } from '../utils/formatters';
@@ -21,21 +22,21 @@ export const useOperationalMetrics = (
 
         const processingTimes: number[] = [];
         const actualShrinkFactors: number[] = [];
-        const cuppingScores2: number[] = [];
+        const cuppingScores: number[] = [];
         const farmerDeliveries: Record<string, number> = {};
         let totalEstShrinkFactor = 0;
-        
+
         const farmerNameMap = new Map<string, string>();
         allFarmers.forEach(f => farmerNameMap.set(f.id, f.name));
         // Add fallback for legacy local farmers
         filteredProjects.forEach(p => (p.farmers || []).forEach(f => {
             if (!farmerNameMap.has(f.id)) farmerNameMap.set(f.id, f.name);
         }));
-        
+
         const start = new Date(startDate);
-        start.setUTCHours(0,0,0,0);
+        start.setUTCHours(0, 0, 0, 0);
         const end = new Date(endDate);
-        end.setUTCHours(23,59,59,999);
+        end.setUTCHours(23, 59, 59, 999);
 
         const allProjectDeliveries = filteredProjects.flatMap(p => p.deliveries || []);
 
@@ -51,7 +52,7 @@ export const useOperationalMetrics = (
             const weekKey = `${year}-W${week.toString().padStart(2, '0')}`;
             weeklyDeliveriesMap.set(weekKey, (weeklyDeliveriesMap.get(weekKey) || 0) + d.weight);
         });
-        
+
         const allWeeksInRange = new Map<string, number>();
         if (start <= end) {
             let current = new Date(start);
@@ -65,7 +66,7 @@ export const useOperationalMetrics = (
                 current.setDate(current.getDate() + 7);
             }
         }
-        
+
         const combinedWeeksMap = new Map([...allWeeksInRange, ...weeklyDeliveriesMap]);
         const sortedWeeks = Array.from(combinedWeeksMap.keys()).sort();
 
@@ -80,71 +81,76 @@ export const useOperationalMetrics = (
             };
         });
 
-
         filteredProjects.forEach(p => {
-            totalRequiredGreenBeanMass += p.requiredGreenBeanMassKg;
-            totalEstShrinkFactor += p.estShrinkFactor;
+            totalRequiredGreenBeanMass += p.requiredGreenBeanMassKg || 0;
+            totalEstShrinkFactor += p.estShrinkFactor || 6.25;
 
-            const storedBatchIds = new Set((p.storedBatches || []).map(sb => sb.dryingBatchId));
-            const hullingBatchIds = new Set((p.hullingBatches || []).map(hb => hb.storedBatchId));
-            const hulledBatchIds = new Set((p.hulledBatches || []).map(hld => hld.storedBatchId));
-            const soldBatchIds = new Set((p.sales || []).flatMap(s => s.hulledBatchIds || []));
-
+            // 1. Process Deliveries
             (p.deliveries || []).forEach(d => {
                 totalCherryDelivered += d.weight;
                 farmerDeliveries[d.farmerId] = (farmerDeliveries[d.farmerId] || 0) + d.weight;
             });
 
-            (p.dryingBatches || []).forEach(db => {
-                if (!storedBatchIds.has(db.id)) {
-                    totalCurrentlyDrying += db.initialCherryWeight;
-                }
-            });
-
-            (p.storedBatches || []).forEach(sb => {
-                if (!hullingBatchIds.has(sb.id) && !hulledBatchIds.has(sb.id)) {
-                    totalInStorage += sb.initialCherryWeight;
-                }
-            });
-            
-            (p.hulledBatches || []).forEach(hb => {
-                totalGreenBeanHulled += hb.greenBeanWeight;
-                if (soldBatchIds.has(hb.id)) {
-                    totalGreenBeanSold += hb.greenBeanWeight;
-                }
-                if(hb.cuppingScore2) cuppingScores2.push(hb.cuppingScore2);
-                if (hb.initialCherryWeight > 0 && hb.greenBeanWeight > 0) {
-                     actualShrinkFactors.push(hb.initialCherryWeight / hb.greenBeanWeight);
+            // 2. Process Unified Batches
+            (p.processingBatches || []).forEach(batch => {
+                // Currently Drying
+                if (batch.currentStage === 'DESICCATION' && batch.status !== 'COMPLETED') {
+                    totalCurrentlyDrying += batch.weight;
                 }
 
-                const storedBatch = (p.storedBatches || []).find(sb => sb.id === hb.storedBatchId);
-                if (storedBatch) {
-                    const dryingBatch = (p.dryingBatches || []).find(db => db.id === storedBatch.dryingBatchId);
-                    if (dryingBatch) {
-                        const delivery = (p.deliveries || []).find(d => d.id === dryingBatch.deliveryId);
-                        if (delivery) {
-                            processingTimes.push(dayDiff(new Date(delivery.date), new Date(hb.hullingDate)));
-                        }
+                // Currently Resting (Storage)
+                if (batch.currentStage === 'RESTING' && batch.status !== 'COMPLETED') {
+                    totalInStorage += batch.weight;
+                }
+
+                // Export Ready (Hulled/Graded Green Bean)
+                const hasReachedExportReady = batch.history.some(h => h.stage === 'EXPORT_READY');
+                if (hasReachedExportReady || batch.currentStage === 'EXPORT_READY') {
+                    totalGreenBeanHulled += batch.weight;
+
+                    if (batch.cuppingScore) {
+                        cuppingScores.push(batch.cuppingScore);
+                    }
+
+                    // Calculate Shrink Factor based on traceability snapshot (Initial Cherry Weight) vs Current Weight
+                    const initialCherryWeight = (batch.traceabilitySnapshot || []).reduce((sum, snap) => sum + snap.weightKg, 0);
+                    if (initialCherryWeight > 0 && batch.weight > 0 && !batch.isRemainder && !batch.isTransfer) {
+                        actualShrinkFactors.push(initialCherryWeight / batch.weight);
+                    }
+
+                    // Calculate Processing Time
+                    const receptionStep = batch.history.find(h => h.stage === 'RECEPTION' || h.stage === 'FLOATING');
+                    const exportReadyStep = batch.history.find(h => h.stage === 'EXPORT_READY');
+                    if (receptionStep && exportReadyStep && exportReadyStep.startDate) {
+                        processingTimes.push(dayDiff(new Date(receptionStep.startDate), new Date(exportReadyStep.startDate)));
                     }
                 }
             });
+
+            // 3. Process Sales (reading from processingBatches)
+            const soldBatchIds = new Set((p.sales || []).flatMap(s => s.processingBatchIds || []));
+            soldBatchIds.forEach(batchId => {
+                const batch = (p.processingBatches || []).find(b => b.id === batchId);
+                if (batch) {
+                    totalGreenBeanSold += batch.weight;
+                }
+            });
         });
-        
+
         const topFarmers = Object.entries(farmerDeliveries)
             .sort(([, a], [, b]) => b - a)
             .slice(0, 5)
             .map(([farmerId, weight]) => ({ id: farmerId, name: farmerNameMap.get(farmerId) || 'Unknown', weight }));
-            
+
         const projectFulfillment = totalRequiredGreenBeanMass > 0 ? (totalGreenBeanSold / totalRequiredGreenBeanMass) * 100 : 0;
-        const avgGreenBeanQuality = cuppingScores2.length > 0 ? cuppingScores2.reduce((a, b) => a + b, 0) / cuppingScores2.length : 0;
+        const avgGreenBeanQuality = cuppingScores.length > 0 ? cuppingScores.reduce((a, b) => a + b, 0) / cuppingScores.length : 0;
         const avgProcessingTime = processingTimes.length > 0 ? processingTimes.reduce((a, b) => a + b, 0) / processingTimes.length : 0;
-        
+
         const avgActualShrinkFactor = actualShrinkFactors.length > 0 ? actualShrinkFactors.reduce((a, b) => a + b, 0) / actualShrinkFactors.length : 0;
         const avgActualYieldEfficiency = avgActualShrinkFactor > 0 ? 100 / avgActualShrinkFactor : 0;
 
         const avgEstShrinkFactor = filteredProjects.length > 0 ? totalEstShrinkFactor / filteredProjects.length : 0;
         const avgTargetYieldEfficiency = avgEstShrinkFactor > 0 ? 100 / avgEstShrinkFactor : 0;
-
 
         return {
             totalCherryDelivered,

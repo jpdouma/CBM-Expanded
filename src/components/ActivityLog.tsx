@@ -1,3 +1,4 @@
+// ==> src/components/ActivityLog.tsx <==
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import type { Project, ActivityLogEntry, ActivityLogEntryType, Financier, Farmer } from '../types';
@@ -18,14 +19,14 @@ const EVENT_CONFIG: Record<ActivityLogEntryType, { icon: IconName, color: string
     'financing': { icon: 'money', color: 'bg-teal-500', isDateEditable: true },
     'advance': { icon: 'money', color: 'bg-red-500', isDateEditable: true },
     'delivery': { icon: 'truck', color: 'bg-blue-500', isDateEditable: true },
-    'drying_start': { icon: 'sun', color: 'bg-yellow-500', isDateEditable: true },
+    'drying_start': { icon: 'sun', color: 'bg-yellow-500', isDateEditable: false }, // Handled by processing_step now
     'moisture_measurement': { icon: 'droplet', color: 'bg-cyan-500', isDateEditable: true },
-    'storage': { icon: 'archiveBox', color: 'bg-purple-500', isDateEditable: true },
-    'hulling_start': { icon: 'cog', color: 'bg-indigo-500', isDateEditable: true },
-    'hulling_complete': { icon: 'cog', color: 'bg-indigo-600', isDateEditable: true },
+    'storage': { icon: 'archiveBox', color: 'bg-purple-500', isDateEditable: false }, // Handled by putAwayDate updates
+    'hulling_start': { icon: 'cog', color: 'bg-indigo-500', isDateEditable: false }, // Handled by processing_step now
+    'hulling_complete': { icon: 'cog', color: 'bg-indigo-600', isDateEditable: false }, // Handled by processing_step now
     'sale': { icon: 'money', color: 'bg-green-500', isDateEditable: true },
     'transfer_out': { icon: 'switchHorizontal', color: 'bg-orange-500', isDateEditable: false },
-    'transfer_in': { icon: 'switchHorizontal', color: 'bg-blue-500', isDateEditable: true },
+    'transfer_in': { icon: 'switchHorizontal', color: 'bg-blue-500', isDateEditable: false },
     'processing_step': { icon: 'refresh', color: 'bg-green-600', isDateEditable: true },
 };
 
@@ -34,13 +35,9 @@ const FILTER_OPTIONS: { id: ActivityLogEntryType; name: string }[] = [
     { id: 'financing', name: 'Financing' },
     { id: 'advance', name: 'Advances' },
     { id: 'delivery', name: 'Deliveries' },
-    { id: 'drying_start', name: 'Drying Started' },
     { id: 'moisture_measurement', name: 'Moisture Logs' },
-    { id: 'storage', name: 'Storage Events' },
-    { id: 'hulling_start', name: 'Hulling Started' },
-    { id: 'hulling_complete', name: 'Hulling Complete' },
+    { id: 'storage', name: 'Storage Put-Aways' },
     { id: 'sale', name: 'Sales' },
-    { id: 'transfer_out', name: 'Transfers Out' },
     { id: 'transfer_in', name: 'Transfers In' },
     { id: 'processing_step', name: 'Processing Steps' },
 ];
@@ -75,33 +72,35 @@ const generateActivityLog = (projects: Project[], allFinanciers: Financier[], al
                 description: description, amountUSD: -d.costUSD
             });
         });
-        (p.dryingBatches || []).forEach(db => {
-            log.push({ id: db.id, date: new Date(db.startDate), projectId: p.id, projectName: p.name, type: 'drying_start', description: `Started drying cherry from delivery #${db.deliveryId.slice(-4)}` });
-            (db.moistureMeasurements || []).forEach(m => log.push({
-                id: m.id, date: new Date(m.date), projectId: p.id, projectName: p.name, type: 'moisture_measurement', description: `Moisture for batch #${db.id.slice(-4)} measured at ${m.percentage}%`
-            }));
-        });
-        (p.storedBatches || []).forEach(sb => log.push({
-            id: sb.id, date: new Date(sb.storageDate), projectId: p.id, projectName: p.name, type: 'storage', description: `Batch #${sb.dryingBatchId ? sb.dryingBatchId.slice(-4) : sb.deliveryId.slice(-4)} moved to storage. Cupping score: ${sb.cuppingScore1}`
-        }));
-        (p.hullingBatches || []).forEach(hb => log.push({
-            id: hb.id, date: new Date(hb.startDate), projectId: p.id, projectName: p.name, type: 'hulling_start', description: `Started hulling stored batch #${hb.storedBatchId.slice(-4)}`
-        }));
-        (p.hulledBatches || []).forEach(hld => {
-            if (hld.isTransfer) {
-                log.push({ id: hld.id, date: new Date(hld.hullingDate), projectId: p.id, projectName: p.name, type: 'transfer_in', description: `Stock transfer received: ${hld.greenBeanWeight.toLocaleString('en-US')} kg` });
-            } else {
-                log.push({ id: hld.id, date: new Date(hld.hullingDate), projectId: p.id, projectName: p.name, type: 'hulling_complete', description: `Finished hulling batch #${hld.storedBatchId.slice(-4)}, yielding ${hld.greenBeanWeight.toLocaleString('en-US')} kg of green bean. Cupping score: ${hld.cuppingScore2}` });
-            }
-        });
         (p.sales || []).forEach(s => log.push({
-            id: s.id, date: new Date(s.invoiceDate), projectId: p.id, projectName: p.name, type: 'sale', description: `Sale to ${s.clientName} for ${(s.hulledBatchIds || []).length} batch(es)`, amountUSD: s.totalSaleAmountUSD
+            id: s.id, date: new Date(s.invoiceDate), projectId: p.id, projectName: p.name, type: 'sale', description: `Sale to ${s.clientName} for ${(s.processingBatchIds || []).length} batch(es)`, amountUSD: s.totalSaleAmountUSD
         }));
         (p.financing || []).forEach(f => log.push({
             id: f.id, date: new Date(f.date), projectId: p.id, projectName: p.name, type: 'financing', description: `Financing received from ${getFinancierName(f.financierId)}`, amountUSD: f.amountUSD
         }));
+
+        // ALL UNIFIED PROCESSING LOGIC
         (p.processingBatches || []).forEach(pb => {
+            // Moisture logs
+            (pb.moistureLogs || []).forEach(m => log.push({
+                id: m.id, date: new Date(m.date), projectId: p.id, projectName: p.name, type: 'moisture_measurement', description: `Moisture for batch #${pb.id.slice(-8)} measured at ${m.percentage}%`
+            }));
+
+            // Put-away events
+            if (pb.putAwayDate) {
+                log.push({
+                    id: `${pb.id}-putaway`, date: new Date(pb.putAwayDate), projectId: p.id, projectName: p.name, type: 'storage', description: `Batch #${pb.id.slice(-8)} placed in warehouse location ${pb.warehouseLocation} (Zone ${pb.storageZone || 'N/A'})`
+                });
+            }
+
+            // Transfer events
+            if (pb.isTransfer && pb.history.length > 0) {
+                log.push({ id: pb.id, date: new Date(pb.history[0].startDate), projectId: p.id, projectName: p.name, type: 'transfer_in', description: `Stock transfer received: ${pb.weight.toLocaleString('en-US')} kg (Batch #${pb.id.slice(-8)})` });
+            }
+
+            // Core processing states (Iteration over history)
             (pb.history || []).forEach((step, idx) => {
+                // Log the start of the step
                 log.push({
                     id: `${pb.id}|${idx}|start`,
                     date: new Date(step.startDate),
@@ -111,13 +110,18 @@ const generateActivityLog = (projects: Project[], allFinanciers: Financier[], al
                     description: `Batch #${pb.id.slice(-8)}: Started ${step.stage.toLowerCase().replace('_', ' ')}`
                 });
 
+                // Log the end of the step
                 if (step.endDate) {
                     let desc = `Batch #${pb.id.slice(-8)}: Completed ${step.stage.toLowerCase().replace('_', ' ')}`;
+
                     if (step.stage === 'FLOATING' && step.weightOut !== undefined) {
                         desc += ` (Sinkers: ${step.weightOut}kg, Floaters: ${step.floaterWeight || 0}kg)`;
                     }
                     if (step.stage === 'RECEPTION' && pb.containerIds) {
-                        desc += ` into ${pb.containerIds.length} containers`;
+                        desc += ` into ${pb.containerIds.length} physical containers`;
+                    }
+                    if (step.stage === 'DESICCATION' && step.weightOut !== undefined) {
+                        desc += ` (Harvested Weight: ${step.weightOut}kg)`;
                     }
 
                     log.push({
@@ -141,6 +145,7 @@ export const ActivityLog: React.FC<ActivityLogProps> = ({ projects, isPrinting =
     const { financiers: allFinanciers = [], farmers: allFarmers = [] } = state;
 
     const activityLog = useMemo(() => generateActivityLog(projects, allFinanciers, allFarmers), [projects, allFinanciers, allFarmers]);
+
     const [editingEntry, setEditingEntry] = useState<{ id: string; date: string } | null>(null);
     const [isBulkEditing, setIsBulkEditing] = useState(false);
     const [selectedEntryIds, setSelectedEntryIds] = useState<string[]>([]);
@@ -175,8 +180,10 @@ export const ActivityLog: React.FC<ActivityLogProps> = ({ projects, isPrinting =
 
     const handleJumpToDate = (dateStr: string) => {
         if (!dateStr || !logContainerRef.current) return;
+
         const [year, month, day] = dateStr.split('-').map(Number);
         const targetDate = new Date(year, month - 1, day, 23, 59, 59, 999);
+
         const targetEntry = filteredLog.find(entry => entry.date <= targetDate);
 
         if (targetEntry) {
@@ -217,7 +224,7 @@ export const ActivityLog: React.FC<ActivityLogProps> = ({ projects, isPrinting =
 
     const handleDelete = (entry: ActivityLogEntry) => {
         const warning = entry.type === 'processing_step'
-            ? `⚠️ WARNING: Deleting a processing step will delete the ENTIRE BATCH from the system to prevent data corruption. Are you sure you want to wipe this batch?`
+            ? `⚠️ WARNING: Deleting a processing step will delete the ENTIRE BATCH from the system to prevent data corruption.\n\nAre you sure you want to wipe this batch?`
             : `Are you sure you want to permanently delete this record?`;
 
         if (window.confirm(warning)) {

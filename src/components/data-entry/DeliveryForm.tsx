@@ -1,5 +1,6 @@
+// ==> src/components/data-entry/DeliveryForm.tsx <==
 import React, { useState, useMemo } from 'react';
-import type { Project, Farmer, BuyingPrices } from '../../types';
+import type { Project, Farmer, BuyingPrices, Container } from '../../types';
 import { Icon } from '../Icons';
 import { useProjects } from '../../context/ProjectProvider';
 
@@ -7,12 +8,22 @@ interface DeliveryFormProps {
     project: Project;
     farmers: Farmer[];
     buyingPrices: BuyingPrices[];
+    containers?: Container[];
+    onAddDelivery?: (delivery: any) => void;
+    onAddContainer?: (container: any) => void;
+    onUpdateContainer?: (id: string, updates: any) => void;
+    onAddPaymentLine?: (paymentLine: any) => void;
 }
 
 export const DeliveryForm: React.FC<DeliveryFormProps> = ({
     project,
     farmers,
-    buyingPrices
+    buyingPrices,
+    containers,
+    onAddDelivery,
+    onAddContainer,
+    onUpdateContainer,
+    onAddPaymentLine
 }) => {
     const { dispatch } = useProjects();
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -33,6 +44,10 @@ export const DeliveryForm: React.FC<DeliveryFormProps> = ({
             return today >= start && today <= end;
         });
     }, [buyingPrices, date]);
+
+    // Calculate current total percentage and its validity
+    const currentTotalPct = (parseFloat(unripe) || 0) + (parseFloat(earlyRipe) || 0) + (parseFloat(optimal) || 0) + (parseFloat(overRipe) || 0);
+    const isTotalValid = Math.abs(currentTotalPct - 100) < 0.01;
 
     const calculatedPayout = useMemo(() => {
         if (!activePrices || !weight) return 0;
@@ -59,6 +74,7 @@ export const DeliveryForm: React.FC<DeliveryFormProps> = ({
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+
         if (!farmerId || !weight || !activePrices) {
             alert("Please fill all required fields and ensure active buying prices exist for this date.");
             return;
@@ -67,9 +83,8 @@ export const DeliveryForm: React.FC<DeliveryFormProps> = ({
         const w = parseFloat(weight);
         if (w <= 0) return;
 
-        const totalPct = (parseFloat(unripe) || 0) + (parseFloat(earlyRipe) || 0) + (parseFloat(optimal) || 0) + (parseFloat(overRipe) || 0);
-        if (Math.abs(totalPct - 100) > 0.1) {
-            alert("Percentages must add up to 100%");
+        if (!isTotalValid) {
+            alert("Percentages must add up to exactly 100%");
             return;
         }
 
@@ -130,7 +145,13 @@ export const DeliveryForm: React.FC<DeliveryFormProps> = ({
                 </div>
 
                 <div className="space-y-4">
-                    <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800 pb-2">Grading & Payout</h4>
+                    <div className="flex justify-between items-end border-b border-gray-100 dark:border-gray-800 pb-2">
+                        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Grading & Payout</h4>
+                        <span className={`text-xs font-bold ${isTotalValid ? 'text-green-500 dark:text-green-400' : 'text-brand-red'}`}>
+                            Total: {currentTotalPct.toFixed(1)}%
+                        </span>
+                    </div>
+
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-2 tracking-wider">Unripe %</label>
@@ -170,7 +191,7 @@ export const DeliveryForm: React.FC<DeliveryFormProps> = ({
             <div className="flex justify-end pt-4 border-t border-gray-100 dark:border-gray-800">
                 <button
                     type="submit"
-                    disabled={!activePrices}
+                    disabled={!activePrices || !isTotalValid}
                     className="bg-brand-blue hover:opacity-90 disabled:bg-gray-300 dark:disabled:bg-gray-800 disabled:cursor-not-allowed text-white font-bold py-2 px-8 rounded-lg transition-all shadow-md flex items-center gap-2"
                 >
                     <Icon name="plus" className="w-5 h-5" />

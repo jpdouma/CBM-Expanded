@@ -1,3 +1,4 @@
+// ==> src/utils/seedData.ts <==
 import { ProjectAction, ProcessingStage } from '../types';
 
 export const seedDummyData = (dispatch: React.Dispatch<ProjectAction>) => {
@@ -21,7 +22,6 @@ export const seedDummyData = (dispatch: React.Dispatch<ProjectAction>) => {
 
     console.log("Creating project, farmers, and beds...");
     dispatch({ type: 'ADD_FARMER', payload: { id: farmer3Id, farmerData: { name: "David Musoke", airtelMoneyNumber: "0752123456", phoneNumber: "+256 752 123456", district: "Mubende" } } });
-
     dispatch({ type: 'ADD_DRYING_BED', payload: { id: bed1Id, bedData: { uniqueNumber: "10-2026-PETER", capacityKg: 500, areaM2: 20, creationDate: "2026-03-08" } } });
     dispatch({ type: 'ADD_DRYING_BED', payload: { id: bed2Id, bedData: { uniqueNumber: "10-2026-SARAH", capacityKg: 500, areaM2: 20, creationDate: "2026-03-08" } } });
 
@@ -148,14 +148,16 @@ export const seedDummyData = (dispatch: React.Dispatch<ProjectAction>) => {
             projectId,
             containerIds,
             dryingBedId: bed1Id,
-            startDate: date
+            startDate: date,
+            completedBy: "System Seeder"
         }
     });
 
     // 7. State Machine: Transition from DRYING -> RESTING
     console.log("Transitioning processing step...");
     // In this app, LOAD_DRYING_BED starts at DESICCATION.
-    // We need to find the batchId. The reducer generates it as `${dayOfWeek}-wk${weekStr}${year}-${bedName}`
+    // We need to find the batchId.
+    // The reducer generates it as `${dayOfWeek}-wk${weekStr}${year}-${bedName}`
     // For 2026-03-08 (Sunday), dayOfWeek is 7. Week is 10. Year is 26. Bed is BED-01.
     const batchId = `7-wk1026-BED-01`;
 

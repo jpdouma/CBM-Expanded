@@ -1,3 +1,4 @@
+// ==> src/hooks/useDashboardMetrics.ts <==
 import { useMemo } from 'react';
 import type { Project, Financier, Farmer } from '../types';
 import { formatDate } from '../utils/formatters';
@@ -20,7 +21,7 @@ export const useDashboardMetrics = (
         let totalPurchases = 0;
         let totalSetupCosts = 0;
         let totalAdvances = 0;
-        
+
         let projectedRevenue = 0;
         let projectedTotalCosts = 0;
 
@@ -34,47 +35,51 @@ export const useDashboardMetrics = (
             totalAdvances += (p.advances || []).reduce((sum, a) => sum + safeVal(a.amountUSD), 0);
             totalPurchases += (p.deliveries || []).reduce((sum, d) => sum + safeVal(d.amountPaidUSD), 0);
             totalSetupCosts += (p.setupCosts || []).reduce((sum, sc) => sum + safeVal(sc.amountUSD), 0);
-            
-            const dryingBatchDeliveryIds = new Set((p.dryingBatches || []).map(db => db.deliveryId));
-            const storedBatchDryingIds = new Set((p.storedBatches || []).map(sb => sb.dryingBatchId));
-            const hullingBatchStoredIds = new Set((p.hullingBatches || []).map(hb => hb.storedBatchId));
-            const hulledBatchStoredIds = new Set((p.hulledBatches || []).map(hld => hld.storedBatchId));
-            const soldHulledBatchIds = new Set((p.sales || []).flatMap(s => s.hulledBatchIds || []));
 
-            valueRawMaterial += (p.deliveries || [])
-                .filter(d => !dryingBatchDeliveryIds.has(d.id))
-                .reduce((sum, d) => sum + safeVal(d.costUSD), 0);
-            
-            const dryingBatchesInProgress = (p.dryingBatches || []).filter(db => !storedBatchDryingIds.has(db.id));
-            const storedBatchesInProgress = (p.storedBatches || []).filter(sb => !hullingBatchStoredIds.has(sb.id) && !hulledBatchStoredIds.has(sb.id));
-            const deliveryIdsForDrying = dryingBatchesInProgress.map(db => db.deliveryId);
-            const deliveryIdsForStored = storedBatchesInProgress.flatMap(sb => {
-                const dryingBatch = (p.dryingBatches || []).find(db => db.id === sb.dryingBatchId);
-                return dryingBatch ? [dryingBatch.deliveryId] : [];
-            });
-            const allInProgressDeliveryIds = new Set([...deliveryIdsForDrying, ...deliveryIdsForStored]);
-            valueInProcess += (p.deliveries || [])
-                .filter(d => allInProgressDeliveryIds.has(d.id))
-                .reduce((sum, d) => sum + safeVal(d.costUSD), 0);
-            
-            // Ensure exchange rate is non-zero to avoid infinity
-            const exchangeRate = p.exchangeRateUGXtoUSD && p.exchangeRateUGXtoUSD > 0 ? p.exchangeRateUGXtoUSD : 3750; 
-            const pricePerKgUSD = p.targetSalePriceCurrency === 'USD' 
+            const exchangeRate = p.exchangeRateUGXtoUSD && p.exchangeRateUGXtoUSD > 0 ? p.exchangeRateUGXtoUSD : 3750;
+            const pricePerKgUSD = p.targetSalePriceCurrency === 'USD'
                 ? safeVal(p.targetSalePricePerKg)
                 : safeVal(p.targetSalePricePerKg) / exchangeRate;
-                
-            valueReadyForSale += (p.hulledBatches || [])
-                .filter(hb => !soldHulledBatchIds.has(hb.id))
-                .reduce((sum, b) => sum + (safeVal(b.greenBeanWeight) * pricePerKgUSD), 0);
-            
+
+            const pTotalDeliveryCostUSD = (p.deliveries || []).reduce((sum, d) => sum + safeVal(d.costUSD), 0);
+            const pTotalDeliveredCherryMass = (p.deliveries || []).reduce((sum, d) => sum + safeVal(d.weight), 0);
+
+            // Calculate weighted average cost of cherry so far
+            const avgCostPerKgCherry = pTotalDeliveredCherryMass > 0
+                ? pTotalDeliveryCostUSD / pTotalDeliveredCherryMass
+                : safeVal(p.estCostPerKgCherryUSD);
+
+            // --- INVENTORY VALUATION ---
+            const soldBatchIds = new Set((p.sales || []).flatMap(s => s.processingBatchIds || []));
+            let totalBatchCherryWeight = 0;
+
+            (p.processingBatches || []).forEach(batch => {
+                const batchCherryWeight = (batch.traceabilitySnapshot || []).reduce((sum, s) => sum + safeVal(s.weightKg), 0);
+                totalBatchCherryWeight += batchCherryWeight;
+
+                if (batch.currentStage === 'EXPORT_READY') {
+                    if (!soldBatchIds.has(batch.id)) {
+                        // Ready for sale is valued at target market price
+                        valueReadyForSale += safeVal(batch.weight) * pricePerKgUSD;
+                    }
+                } else if (batch.status !== 'COMPLETED') {
+                    // In-process is valued at raw material cost equivalent
+                    valueInProcess += batchCherryWeight * avgCostPerKgCherry;
+                }
+            });
+
+            // Raw material is any delivered cherry not yet dumped into a processing batch
+            const unassignedCherryWeight = Math.max(0, pTotalDeliveredCherryMass - totalBatchCherryWeight);
+            valueRawMaterial += unassignedCherryWeight * avgCostPerKgCherry;
+
             // --- REVENUE PROJECTION ---
             const pActualRevenue = (p.sales || []).reduce((sum, s) => sum + safeVal(s.totalSaleAmountUSD), 0);
-            
+
             // Calculate total green bean volume sold
             const pVolumeSold = (p.sales || []).reduce((sSum, sale) => {
-                const saleWeight = (sale.hulledBatchIds || []).reduce((bSum, bId) => {
-                    const batch = (p.hulledBatches || []).find(hb => hb.id === bId);
-                    return bSum + safeVal(batch?.greenBeanWeight);
+                const saleWeight = (sale.processingBatchIds || []).reduce((bSum, bId) => {
+                    const batch = (p.processingBatches || []).find(hb => hb.id === bId);
+                    return bSum + safeVal(batch?.weight);
                 }, 0);
                 return sSum + saleWeight;
             }, 0);
@@ -82,35 +87,27 @@ export const useDashboardMetrics = (
             // Calculate remaining revenue to be realized
             const pRemainingVolumeToSell = Math.max(0, safeVal(p.requiredGreenBeanMassKg) - pVolumeSold);
             const pProjectedRemainingRevenue = pRemainingVolumeToSell * pricePerKgUSD;
-            
+
             projectedRevenue += pActualRevenue + pProjectedRemainingRevenue;
 
             // --- COST PROJECTION ---
             const pTotalSetupCostsUSD = (p.setupCosts || []).reduce((sum, sc) => sum + safeVal(sc.amountUSD), 0);
-            const pTotalDeliveryCostUSD = (p.deliveries || []).reduce((sum, d) => sum + safeVal(d.costUSD), 0);
-            const pTotalDeliveredCherryMass = (p.deliveries || []).reduce((sum, d) => sum + safeVal(d.weight), 0);
-            
-            // Calculate weighted average cost of cherry so far
-            const avgCostPerKgCherry = pTotalDeliveredCherryMass > 0 
-                ? pTotalDeliveryCostUSD / pTotalDeliveredCherryMass 
-                : safeVal(p.estCostPerKgCherryUSD);
-            
             const totalRequiredCherryMass = safeVal(p.requiredGreenBeanMassKg) * (p.estShrinkFactor && p.estShrinkFactor > 0 ? p.estShrinkFactor : 6.25);
             const remainingCherryToBuy = Math.max(0, totalRequiredCherryMass - pTotalDeliveredCherryMass);
-            
+
             const futureCherryCost = remainingCherryToBuy * avgCostPerKgCherry;
-            
+
             let pProjectedCosts = pTotalDeliveryCostUSD + futureCherryCost;
             if (!excludeSetupCostsFromMargin) {
                 pProjectedCosts += pTotalSetupCostsUSD;
             }
             projectedTotalCosts += pProjectedCosts;
         });
-        
-        const projectedGrossMargin = projectedRevenue > 0 
-            ? ((projectedRevenue - projectedTotalCosts) / projectedRevenue) * 100 
+
+        const projectedGrossMargin = projectedRevenue > 0
+            ? ((projectedRevenue - projectedTotalCosts) / projectedRevenue) * 100
             : 0;
-        
+
         const totalOutflow = totalPurchases + totalSetupCosts + totalAdvances;
         const netCashflow = actualRevenue + totalFinancing - totalOutflow;
         const totalInventoryValue = valueRawMaterial + valueInProcess + valueReadyForSale;
@@ -134,14 +131,14 @@ export const useDashboardMetrics = (
         const safeVal = (n: number | undefined | null) => (n !== undefined && n !== null && !isNaN(n) && isFinite(n)) ? n : 0;
 
         if (!startDate || !endDate || new Date(startDate) > new Date(endDate)) return [];
-        
+
         const start = new Date(startDate);
-        start.setUTCHours(0,0,0,0);
+        start.setUTCHours(0, 0, 0, 0);
         const end = new Date(endDate);
-        end.setUTCHours(23,59,59,999);
+        end.setUTCHours(23, 59, 59, 999);
 
         const allEvents: { date: Date; amount: number; label: string; kgValue?: number; type: 'inflow' | 'outflow', description: string }[] = [];
-        
+
         const getGlobalFinancierName = (financierId: string) => allFinanciers.find(f => f.id === financierId)?.name || 'Unknown';
 
         projects.forEach(p => {
@@ -156,14 +153,13 @@ export const useDashboardMetrics = (
             (p.sales || []).forEach(s => allEvents.push({ date: new Date(s.invoiceDate), amount: safeVal(s.totalSaleAmountUSD), label: `Sale`, type: 'inflow', description: `To ${s.clientName}` }));
             (p.financing || []).forEach(f => allEvents.push({ date: new Date(f.date), amount: safeVal(f.amountUSD), label: 'Financing', type: 'inflow', description: `From ${getGlobalFinancierName(f.financierId)}` }));
         });
-        
+
         allEvents.sort((a, b) => a.date.getTime() - b.date.getTime());
 
         const preRangeBalance = allEvents.filter(e => e.date < start).reduce((sum, e) => sum + e.amount, 0);
-        
         const eventsInRange = allEvents.filter(e => e.date >= start && e.date <= end);
-        
-        const aggregatedEventsMap = new Map<string, { date: Date; amount: number; label: string; kgValue: number; type: 'inflow'|'outflow'; descriptions: string[] }>();
+
+        const aggregatedEventsMap = new Map<string, { date: Date; amount: number; label: string; kgValue: number; type: 'inflow' | 'outflow'; descriptions: string[] }>();
 
         eventsInRange.forEach(event => {
             const dateString = event.date.toISOString().split('T')[0];
@@ -185,13 +181,13 @@ export const useDashboardMetrics = (
             }
         });
 
-        const sortedAggregatedEvents = Array.from(aggregatedEventsMap.values()).sort((a,b) => a.date.getTime() - b.date.getTime());
+        const sortedAggregatedEvents = Array.from(aggregatedEventsMap.values()).sort((a, b) => a.date.getTime() - b.date.getTime());
 
         let waterfallData: WaterfallChartData[] = [];
         waterfallData.push({ type: 'start', label: 'Start Balance', value: preRangeBalance, startBalance: 0, endBalance: preRangeBalance, date: start, descriptions: [`Balance before ${formatDate(start)}`] });
-        
+
         let currentBalance = preRangeBalance;
-        
+
         sortedAggregatedEvents.forEach(event => {
             const startBalance = currentBalance;
             currentBalance += event.amount;
@@ -208,7 +204,7 @@ export const useDashboardMetrics = (
         });
 
         waterfallData.push({ type: 'end', label: 'End Balance', value: currentBalance, startBalance: currentBalance, endBalance: currentBalance, date: end, descriptions: [`Balance as of ${formatDate(end)}`] });
-        
+
         return waterfallData;
     }, [projects, startDate, endDate, allFinanciers, allFarmers]);
 

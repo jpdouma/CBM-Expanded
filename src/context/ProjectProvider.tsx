@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useReducer, useEffect, useState } from 'react';
+// ==> src/context/ProjectProvider.tsx <==
+import React, { createContext, useContext, useReducer, useEffect, useState, useRef, useCallback } from 'react';
 import { projectReducer } from '../reducers/projectReducer';
-import type { ProjectState, ProjectAction } from '../types';
+import type { ProjectState, ProjectAction, Project } from '../types';
 import { db } from '../firebase';
 
 const initialState: ProjectState = {
@@ -51,57 +52,139 @@ interface ProjectContextType {
 const ProjectContext = createContext<ProjectContextType | undefined>(undefined);
 
 export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [state, dispatch] = useReducer(projectReducer, initialState);
+    const [state, reactDispatch] = useReducer(projectReducer, initialState);
     const [isSyncing, setIsSyncing] = useState(false);
-    const [lastUpdatedFromCloud, setLastUpdatedFromCloud] = useState(0);
 
-    // 1. Listen to Firebase for changes
+    // Maintain a mutable ref of the state for synchronous access during dispatch wrapping
+    const stateRef = useRef(state);
+    useEffect(() => {
+        stateRef.current = state;
+    }, [state]);
+
+    // 1. Listen to Granular Firebase Collections (Reads)
     useEffect(() => {
         setIsSyncing(true);
-        // We use a single document 'main' in 'organizations' collection for simplicity 
-        // to maintain the complex reducer logic without rewriting the whole app.
-        const unsub = db.collection("organizations").doc("main").onSnapshot((doc) => {
-            if (doc.exists) {
-                const data = doc.data() as ProjectState;
-                // Dispatch a special load action
-                dispatch({ type: 'LOAD_STATE', payload: data });
-                setLastUpdatedFromCloud(Date.now());
-            } else {
-                // Initialize if empty
-                console.log("Initializing database...");
-                doc.ref.set(initialState);
-            }
-            setIsSyncing(false);
-        }, (error) => {
-            console.error("Firebase Sync Error:", error);
-            setIsSyncing(false);
-        });
 
-        return () => unsub();
+        // A. Listen to individual Projects
+        const unsubProjects = db.collection("organizations/main/projects").onSnapshot(
+            (snap) => {
+                const projects = snap.docs.map(doc => doc.data() as Project);
+                reactDispatch({ type: 'LOAD_STATE', payload: { projects } });
+            },
+            (error) => console.error("Firebase Projects Sync Error:", error)
+        );
+
+        // B. Listen to Master Data
+        const unsubMaster = db.doc("organizations/main/masterData/global").onSnapshot(
+            (doc) => {
+                if (doc.exists) {
+                    reactDispatch({ type: 'LOAD_STATE', payload: doc.data() });
+                } else {
+                    // Seed initial empty state if the document doesn't exist yet
+                    db.doc("organizations/main/masterData/global").set({
+                        farmers: initialState.farmers,
+                        clients: initialState.clients,
+                        financiers: initialState.financiers,
+                        dryingBeds: initialState.dryingBeds,
+                        storageLocations: initialState.storageLocations,
+                        containers: initialState.containers,
+                        buyingPrices: initialState.buyingPrices,
+                        paymentLines: initialState.paymentLines,
+                        globalSettings: initialState.globalSettings
+                    });
+                }
+            },
+            (error) => console.error("Firebase Master Data Sync Error:", error)
+        );
+
+        // C. Listen to Access Control (Users & Roles)
+        const unsubAccess = db.doc("organizations/main/access/users").onSnapshot(
+            (doc) => {
+                if (doc.exists) {
+                    reactDispatch({ type: 'LOAD_STATE', payload: doc.data() });
+                } else {
+                    // Seed initial system role
+                    db.doc("organizations/main/access/users").set({
+                        users: initialState.users,
+                        roles: initialState.roles
+                    });
+                }
+            },
+            (error) => console.error("Firebase Access Sync Error:", error)
+        );
+
+        setIsSyncing(false);
+
+        return () => {
+            unsubProjects();
+            unsubMaster();
+            unsubAccess();
+        };
     }, []);
 
-    // 2. Persist state changes to Firebase
-    useEffect(() => {
-        if (state === initialState) return;
-        
-        // Debounce sync to avoid spamming writes on rapid input
-        const timer = setTimeout(() => {
-            // Only write if the state is newer than the last cloud update 
-            // (Basic loop prevention, though reducer creates new object references)
-            // In a real app we'd compare specific timestamps or diffs
-            if (Date.now() - lastUpdatedFromCloud > 500) {
-                // Remove UI-specific state like 'selectedProjectIds' if you want that local-only
-                // But user requested viewing data, so we sync everything.
-                db.collection("organizations").doc("main").set(state)
-                    .catch(err => console.error("Failed to save to cloud:", err));
-            }
-        }, 1000);
+    // 2. Wrapped Dispatch for Granular Writes
+    const enhancedDispatch = useCallback(async (action: ProjectAction) => {
+        // A. Immediately update the local React UI
+        reactDispatch(action);
 
-        return () => clearTimeout(timer);
-    }, [state, lastUpdatedFromCloud]);
+        // B. Prevent echo loops (don't push incoming cloud data back to the cloud)
+        if (action.type === 'LOAD_STATE') return;
+
+        setIsSyncing(true);
+        try {
+            // C. Calculate the exact new state synchronously to determine diffs
+            const nextState = projectReducer(stateRef.current, action);
+
+            // Diff 1: Projects Collection
+            if (nextState.projects !== stateRef.current.projects) {
+                const currentProjects = stateRef.current.projects;
+
+                // Handle Additions and Updates
+                for (const p of nextState.projects) {
+                    const oldP = currentProjects.find(old => old.id === p.id);
+                    if (p !== oldP) {
+                        await db.collection('organizations/main/projects').doc(p.id).set(p);
+                    }
+                }
+
+                // Handle Deletions
+                for (const oldP of currentProjects) {
+                    if (!nextState.projects.some(p => p.id === oldP.id)) {
+                        await db.collection('organizations/main/projects').doc(oldP.id).delete();
+                    }
+                }
+            }
+
+            // Diff 2: Master Data Document
+            const masterKeys = ['farmers', 'clients', 'financiers', 'dryingBeds', 'storageLocations', 'containers', 'buyingPrices', 'paymentLines', 'globalSettings'] as const;
+            const masterDataChanged = masterKeys.some(key => nextState[key] !== stateRef.current[key]);
+
+            if (masterDataChanged) {
+                const masterPayload: any = {};
+                masterKeys.forEach(k => masterPayload[k] = nextState[k]);
+                await db.doc('organizations/main/masterData/global').set(masterPayload, { merge: true });
+            }
+
+            // Diff 3: Access Control Document
+            const accessKeys = ['users', 'roles'] as const;
+            const accessChanged = accessKeys.some(key => nextState[key] !== stateRef.current[key]);
+
+            if (accessChanged) {
+                const accessPayload: any = {};
+                accessKeys.forEach(k => accessPayload[k] = nextState[k]);
+                await db.doc('organizations/main/access/users').set(accessPayload, { merge: true });
+            }
+
+        } catch (error) {
+            console.error("Granular Firebase Sync Write Error:", error);
+            alert("Failed to sync to the cloud. Please check your connection.");
+        } finally {
+            setIsSyncing(false);
+        }
+    }, []);
 
     return (
-        <ProjectContext.Provider value={{ state, dispatch, isSyncing }}>
+        <ProjectContext.Provider value={{ state, dispatch: enhancedDispatch as React.Dispatch<ProjectAction>, isSyncing }}>
             {children}
         </ProjectContext.Provider>
     );
