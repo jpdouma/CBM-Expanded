@@ -1,3 +1,4 @@
+// ==> src/types.ts <==
 export type Currency = 'USD' | 'UGX' | 'EUR';
 
 export type Permission =
@@ -158,6 +159,7 @@ export interface Container {
     contributions: { farmerId: string; deliveryId: string; weight: number }[];
     date: string;
     status: 'AVAILABLE' | 'IN_USE' | 'QUARANTINED';
+    currentProjectId?: string;
 }
 
 export interface FloatingTank {
@@ -183,9 +185,15 @@ export type ProcessingStage =
     | 'WASHING'
     | 'ANAEROBIC_FERMENTATION'
     | 'CARBONIC_MACERATION'
-    | 'THERMAL_SHOCK'
-    | 'TRIFLEX_MILLING'
-    | 'ECO_PULPER';
+    | 'THERMAL_SHOCK';
+
+export interface Equipment {
+    id: string;
+    name: string;
+    type: 'WET_MILL' | 'DRY_MILL' | 'WAREHOUSE' | 'OTHER';
+    capabilities: ProcessingStage[];
+    isActive: boolean;
+}
 
 export type BatchStatus = 'IN_PROGRESS' | 'PENDING_APPROVAL' | 'COMPLETED';
 
@@ -252,6 +260,7 @@ export interface ProcessingMethod {
     description: string;
     flavorProfile: string;
     pipeline: ProcessingStage[];
+    labels?: string[]; // Multiple aliases/labels for the method
     isSystem: boolean;
 }
 
@@ -430,7 +439,7 @@ export interface ForecastSnapshot {
 export interface Project {
     id: string;
     name: string;
-    tier: ProcessingTier;
+    tier: ProcessingTier; // Legacy
     startDate: string;
     estDryingTimeDays: number;
     estShrinkFactor: number;
@@ -459,6 +468,8 @@ export interface Project {
     deliveries: Delivery[];
 
     // NEW UNIFIED STATE MACHINE
+    processingMethodId?: string; // ADDED: Link to the selected processing method
+    processingMethodLabel?: string; // ADDED: Chosen alias/label for the method
     processingPipeline: ProcessingStage[];
     processingBatches: ProcessingBatch[];
 
@@ -486,6 +497,7 @@ export interface ProjectState {
     buyingPrices: BuyingPrices[];
     paymentLines: PaymentLine[];
     containers: Container[];
+    equipment: Equipment[]; // ADDED for Sprint 4
     globalCurrency?: Currency;
 }
 
@@ -510,17 +522,18 @@ export interface StatementEntry {
 }
 
 // Project Actions
-type AddProjectAction = { type: 'ADD_PROJECT'; payload: { name: string; tier: ProcessingTier; id?: string } };
+// Sprint 6: Updated AddProjectAction to include methodLabel
+type AddProjectAction = { type: 'ADD_PROJECT'; payload: { name: string; methodId: string; methodLabel?: string; id?: string } };
 type DeleteProjectAction = { type: 'DELETE_PROJECT'; payload: { projectId: string } };
 type UpdateProjectAction = { type: 'UPDATE_PROJECT'; payload: { projectId: string; updates: Partial<Project> } };
 type SetSelectedProjectIdsAction = { type: 'SET_SELECTED_PROJECT_IDS'; payload: { ids: string[] } };
-type ImportProjectsAction = { type: 'IMPORT_PROJECTS'; payload: { projects: Project[], clients?: ClientDetails[], financiers?: Financier[], dryingBeds?: DryingBed[], storageLocations?: StorageLocation[], farmers?: Farmer[], processingMethods?: ProcessingMethod[] } };
+type ImportProjectsAction = { type: 'IMPORT_PROJECTS'; payload: { projects: Project[], clients?: ClientDetails[], financiers?: Financier[], dryingBeds?: DryingBed[], storageLocations?: StorageLocation[], farmers?: Farmer[], processingMethods?: ProcessingMethod[], equipment?: Equipment[] } };
 type LoadStateAction = { type: 'LOAD_STATE'; payload: ProjectState };
 type UpdateChecklistItemAction = { type: 'UPDATE_CHECKLIST_ITEM'; payload: { projectId: string; key: keyof PreProjectChecklist; value: boolean } };
 type AddProjectSetupCostAction = { type: 'ADD_PROJECT_SETUP_COST'; payload: { projectId: string; cost: Omit<ProjectSetupCost, 'id' | 'amountUSD'> } };
 type UpdateProjectSetupCostAction = { type: 'UPDATE_PROJECT_SETUP_COST'; payload: { projectId: string; costId: string; updates: Partial<Omit<ProjectSetupCost, 'id' | 'amountUSD'>> } };
 type RemoveProjectSetupCostAction = { type: 'REMOVE_PROJECT_SETUP_COST'; payload: { projectId: string; costId: string } };
-type AddFinancierAction = { type: 'ADD_FINANCIER', payload: { financierData: Omit<Financier, 'id'> } };
+type AddFinancierAction = { type: 'ADD_FINANCER', payload: { financierData: Omit<Financier, 'id'> } };
 type UpdateFinancierAction = { type: 'UPDATE_FINANCIER', payload: { financierId: string, updates: Partial<Omit<Financier, 'id'>> } };
 type DeleteFinancierAction = { type: 'DELETE_FINANCIER', payload: { financierId: string } };
 type AddFinancingAction = { type: 'ADD_FINANCING'; payload: { projectId: string; data: Omit<Financing, 'id' | 'interestRateAnnual'> } };
@@ -530,6 +543,9 @@ type DeleteDryingBedAction = { type: 'DELETE_DRYING_BED', payload: { bedId: stri
 type AddFloatingTankAction = { type: 'ADD_FLOATING_TANK', payload: { tankData: Omit<FloatingTank, 'id'>; id?: string } };
 type UpdateFloatingTankAction = { type: 'UPDATE_FLOATING_TANK', payload: { tankId: string, updates: Partial<Omit<FloatingTank, 'id'>> } };
 type DeleteFloatingTankAction = { type: 'DELETE_FLOATING_TANK', payload: { tankId: string } };
+type AddEquipmentAction = { type: 'ADD_EQUIPMENT'; payload: { equipmentData: Omit<Equipment, 'id'>; id?: string } };
+type UpdateEquipmentAction = { type: 'UPDATE_EQUIPMENT'; payload: { equipmentId: string; updates: Partial<Equipment> } };
+type DeleteEquipmentAction = { type: 'DELETE_EQUIPMENT'; payload: { equipmentId: string } };
 type AddClientAction = { type: 'ADD_CLIENT', payload: { clientData: Omit<ClientDetails, 'id'> } };
 type UpdateClientAction = { type: 'UPDATE_CLIENT', payload: { clientId: string, updates: Partial<Omit<ClientDetails, 'id'>> } };
 type DeleteClientAction = { type: 'DELETE_CLIENT', payload: { clientId: string } };
@@ -537,9 +553,13 @@ type AddStorageLocationAction = { type: 'ADD_STORAGE_LOCATION', payload: { locat
 type UpdateStorageLocationAction = { type: 'UPDATE_STORAGE_LOCATION', payload: { locationId: string, updates: Partial<Omit<StorageLocation, 'id'>> } };
 type DeleteStorageLocationAction = { type: 'DELETE_STORAGE_LOCATION', payload: { locationId: string } };
 
+// Equipment Actions
+
 type GenerateContainersAction = { type: 'GENERATE_CONTAINERS'; payload: { count: number; date: string; tareWeightKg: number } };
 type DeleteContainerAction = { type: 'DELETE_CONTAINER'; payload: { containerId: string } };
 type ForceEmptyContainersAction = { type: 'FORCE_EMPTY_CONTAINERS'; payload: { containerIds: string[] } };
+type DeleteBulkContainersAction = { type: 'DELETE_BULK_CONTAINERS'; payload: { containerIds: string[] } };
+type ImportContainersAction = { type: 'IMPORT_CONTAINERS'; payload: { containers: Omit<Container, 'id'>[] } };
 
 // Farmer Management Actions
 type AddFarmerAction = { type: 'ADD_FARMER'; payload: { farmerData: Omit<Farmer, 'id'>; id?: string } };
@@ -632,6 +652,7 @@ type SplitBatchAction = {
         sourceBatchId: string;
         splits: { grade: string; weight: number; }[];
         stage: ProcessingStage;
+        stages?: ProcessingStage[]; // Added for Sprint 7 multi-stage jumps
         endDate: string;
         completedBy: string;
     }
@@ -667,7 +688,6 @@ type RecalculateUsdValuesAction = { type: 'RECALCULATE_USD_VALUES', payload: { p
 type SaveForecastSnapshotAction = { type: 'SAVE_FORECAST_SNAPSHOT'; payload: { projectId: string; snapshot: ForecastSnapshot } };
 type DeleteForecastSnapshotAction = { type: 'DELETE_FORECAST_SNAPSHOT'; payload: { projectId: string; snapshotId: string } };
 type UpdateGlobalCurrencyAction = { type: 'UPDATE_GLOBAL_CURRENCY'; payload: { currency: Currency } };
-
 type DeleteLogEntryAction = {
     type: 'DELETE_LOG_ENTRY';
     payload: { projectId: string; type: ActivityLogEntryType; id: string; }
@@ -719,6 +739,9 @@ export type ProjectAction =
     | AddFloatingTankAction
     | UpdateFloatingTankAction
     | DeleteFloatingTankAction
+    | AddEquipmentAction
+    | UpdateEquipmentAction
+    | DeleteEquipmentAction
     | AddClientAction
     | UpdateClientAction
     | DeleteClientAction
@@ -743,6 +766,8 @@ export type ProjectAction =
     | GenerateContainersAction
     | DeleteContainerAction
     | ForceEmptyContainersAction
+    | DeleteBulkContainersAction
+    | ImportContainersAction
     | AddAdvanceAction
     | AddBulkAdvancesAction
     | AddDeliveryAction

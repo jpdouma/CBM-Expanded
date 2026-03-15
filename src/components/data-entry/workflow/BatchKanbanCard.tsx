@@ -19,7 +19,8 @@ import {
     ArrowRight,
     Layers,
     Plus,
-    X
+    X,
+    Settings
 } from 'lucide-react';
 import { useProjects } from '../../../context/ProjectProvider';
 import { usePermissions } from '../../../hooks/usePermissions';
@@ -29,7 +30,6 @@ import { CardTitle, CardDescription } from '../../ui/card';
 import { Checkbox } from '../../ui/checkbox';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import { formatDate, dayDiff } from '../../../utils/formatters';
 import type { ProcessingBatch, Project, ProcessingStage, StorageLocation } from '../../../types';
 
@@ -53,9 +53,7 @@ const STAGE_LABELS: Record<string, string> = {
     WASHING: 'Washing',
     ANAEROBIC_FERMENTATION: 'Anaerobic Fermentation',
     CARBONIC_MACERATION: 'Carbonic Maceration',
-    THERMAL_SHOCK: 'Thermal Shock',
-    TRIFLEX_MILLING: 'Triflex Milling',
-    ECO_PULPER: 'Eco-Pulper'
+    THERMAL_SHOCK: 'Thermal Shock'
 };
 
 // EXTERNALIZED COMPONENT: WMS Directed Put-Away Engine
@@ -67,9 +65,10 @@ interface LocationSelectorProps {
     isRemainderMode?: boolean;
     storageLocations: StorageLocation[];
     occupiedBins: Set<string>;
+    availableBins: LocationState[];
 }
 
-const LocationSelector: React.FC<LocationSelectorProps> = ({ title, locationState, onChange, required = false, isRemainderMode = false, storageLocations, occupiedBins }) => {
+const LocationSelector: React.FC<LocationSelectorProps> = ({ title, locationState, onChange, required = false, isRemainderMode = false, storageLocations, occupiedBins, availableBins }) => {
     useEffect(() => {
         if (storageLocations.length === 1 && locationState.facility === '') {
             onChange({ ...locationState, facility: storageLocations[0].name });
@@ -78,12 +77,14 @@ const LocationSelector: React.FC<LocationSelectorProps> = ({ title, locationStat
 
     const facilityObj = storageLocations.find(l => l.name === locationState.facility);
 
-    const availableBins = useMemo(() => {
+    const displayBins = useMemo(() => {
         if (!facilityObj) return [];
-        const bins: LocationState[] = [];
+        
+        // Filter the globally computed available bins for the currently selected facility
+        const bins = availableBins.filter(b => b.facility === locationState.facility);
 
         if (isRemainderMode) {
-            bins.push({
+            bins.unshift({
                 facility: locationState.facility,
                 zone: 'REMNANTS',
                 row: '-',
@@ -92,21 +93,8 @@ const LocationSelector: React.FC<LocationSelectorProps> = ({ title, locationStat
             });
         }
 
-        (facilityObj.allowedZones || []).forEach((zone: string) => {
-            (facilityObj.allowedRows || []).forEach((row: string) => {
-                (facilityObj.allowedPallets || []).forEach((pallet: string) => {
-                    (facilityObj.allowedLevels || []).forEach((level: string) => {
-                        const binStr = `${locationState.facility}|${zone}|${row}|${pallet}|${level}`;
-                        if (!occupiedBins.has(binStr)) {
-                            bins.push({ facility: locationState.facility, zone, row, pallet, level });
-                        }
-                    });
-                });
-            });
-        });
-
         return bins;
-    }, [facilityObj, locationState.facility, isRemainderMode, occupiedBins]);
+    }, [availableBins, locationState.facility, facilityObj, isRemainderMode]);
 
     const currentBinStr = locationState.zone ? `${locationState.zone}|${locationState.row}|${locationState.pallet}|${locationState.level}` : '';
 
@@ -115,40 +103,39 @@ const LocationSelector: React.FC<LocationSelectorProps> = ({ title, locationStat
             <Label className="text-xs font-bold text-gray-500 uppercase tracking-widest">{title} {required && '*'}</Label>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="md:col-span-1">
-                    <Select value={locationState.facility} onValueChange={v => onChange({ facility: v, zone: '', row: '', pallet: '', level: '' })}>
-                        <SelectTrigger className="h-10 text-xs bg-white dark:bg-gray-800"><SelectValue placeholder="Facility" /></SelectTrigger>
-                        <SelectContent className="bg-white dark:bg-gray-800">
-                            {storageLocations.map(l => <SelectItem key={l.id} value={l.name}>{l.name}</SelectItem>)}
-                        </SelectContent>
-                    </Select>
+                    <select 
+                        value={locationState.facility} 
+                        onChange={e => onChange({ facility: e.target.value, zone: '', row: '', pallet: '', level: '' })}
+                        className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-md h-11 px-3 text-sm focus:ring-2 focus:ring-brand-blue outline-none"
+                    >
+                        <option value="" disabled>Facility</option>
+                        {storageLocations.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                    </select>
                 </div>
                 <div className="md:col-span-2 flex gap-2">
-                    <Select
-                        disabled={!facilityObj || availableBins.length === 0}
+                    <select
+                        disabled={!facilityObj || displayBins.length === 0}
                         value={currentBinStr}
-                        onValueChange={v => {
-                            const [zone, row, pallet, level] = v.split('|');
+                        onChange={e => {
+                            const [zone, row, pallet, level] = e.target.value.split('|');
                             onChange({ ...locationState, zone, row, pallet, level });
                         }}
+                        className="flex-1 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-md h-11 px-3 text-sm focus:ring-2 focus:ring-brand-blue outline-none disabled:opacity-50"
                     >
-                        <SelectTrigger className="h-10 text-xs bg-white dark:bg-gray-800 flex-1">
-                            <SelectValue placeholder={availableBins.length === 0 && facilityObj ? "No empty bins available" : "Select Empty Bin..."} />
-                        </SelectTrigger>
-                        <SelectContent className="bg-white dark:bg-gray-800 max-h-[300px]">
-                            {availableBins.map((bin, idx) => {
-                                const isRem = bin.zone === 'REMNANTS';
-                                const valStr = `${bin.zone}|${bin.row}|${bin.pallet}|${bin.level}`;
-                                const label = isRem ? `🌟 Remnants / Consolidation Rack` : `Zone ${bin.zone} • Row ${bin.row} • Pallet ${bin.pallet} • Lvl ${bin.level}`;
-                                return <SelectItem key={`${valStr}-${idx}`} value={valStr}>{label}</SelectItem>;
-                            })}
-                        </SelectContent>
-                    </Select>
+                        <option value="" disabled>{displayBins.length === 0 && facilityObj ? "No empty bins available" : "Select Empty Bin..."}</option>
+                        {displayBins.map((bin, idx) => {
+                            const isRem = bin.zone === 'REMNANTS';
+                            const valStr = `${bin.zone}|${bin.row}|${bin.pallet}|${bin.level}`;
+                            const label = isRem ? `🌟 Remnants / Consolidation Rack` : `Zone ${bin.zone} • Row ${bin.row} • Pallet ${bin.pallet} • Lvl ${bin.level}`;
+                            return <option key={`${valStr}-${idx}`} value={valStr}>{label}</option>;
+                        })}
+                    </select>
                     <Button
                         type="button"
                         variant="outline"
-                        disabled={!facilityObj || availableBins.length === 0}
-                        onClick={() => onChange(availableBins[0])}
-                        className="h-10 border-brand-blue text-brand-blue hover:bg-brand-blue/10 dark:border-brand-blue dark:text-brand-blue"
+                        disabled={!facilityObj || displayBins.length === 0}
+                        onClick={() => onChange(displayBins[0])}
+                        className="h-11 border-brand-blue text-brand-blue hover:bg-brand-blue/10 dark:border-brand-blue dark:text-brand-blue"
                     >
                         <Sparkles className="w-4 h-4 mr-2" /> Auto-Assign
                     </Button>
@@ -170,6 +157,7 @@ interface BatchKanbanCardProps {
     isCollapsed: boolean;
     onToggleCollapse: () => void;
     occupiedBins: Set<string>;
+    availableBinsList: LocationState[];
     onMoveToNextStage: (batchId: string, assignedBedId?: string) => void;
 }
 
@@ -185,6 +173,7 @@ export const BatchKanbanCard: React.FC<BatchKanbanCardProps> = ({
     isCollapsed,
     onToggleCollapse,
     occupiedBins,
+    availableBinsList,
     onMoveToNextStage
 }) => {
     const { state, dispatch } = useProjects();
@@ -198,10 +187,13 @@ export const BatchKanbanCard: React.FC<BatchKanbanCardProps> = ({
     const [isHarvesting, setIsHarvesting] = useState(false);
     const [harvestWeight, setHarvestWeight] = useState('');
 
+    // Sprint 7: Dynamic Equipment Routing State
+    const [selectedEquipmentId, setSelectedEquipmentId] = useState<string>('');
+
     // Hulling Physics
     const [hullingWeight, setHullingWeight] = useState('');
 
-    // Triflex Physics
+    // Triflex Physics (Kept state names identical to reduce logic rewrite overhead)
     const [triflexSplits, setTriflexSplits] = useState<{ grade: string, weight: string }[]>([{ grade: 'Grade 15', weight: '' }]);
 
     const [putAwayForm, setPutAwayForm] = useState<PutAwayFormState>({
@@ -209,6 +201,16 @@ export const BatchKanbanCard: React.FC<BatchKanbanCardProps> = ({
         main: { facility: '', zone: '', row: '', pallet: '', level: '' },
         rem: { facility: '', zone: '', row: '', pallet: '', level: '' }
     });
+
+    // Determine equipment requirements for this stage
+    const equipmentList = state.equipment || [];
+    const selectedEquipment = equipmentList.find(e => e.id === selectedEquipmentId);
+    const requiresEquipment = ['PULPING', 'WASHING', 'DE_STONING', 'HULLING', 'POLISHING', 'GRADING', 'DENSITY', 'COLOR_SORTING'].includes(activeStage);
+    const validEquipment = equipmentList.filter(e => e.isActive && e.capabilities.includes(activeStage));
+
+    // Dynamic Physics Toggles based on Equipment Capabilities
+    const showHullingBlock = (selectedEquipment?.capabilities.includes('HULLING') || activeStage === 'HULLING') && !selectedEquipment?.capabilities.includes('GRADING');
+    const showGradingBlock = selectedEquipment?.capabilities.includes('GRADING') || activeStage === 'GRADING';
 
     const isPending = batch.status === 'PENDING_APPROVAL';
     const isResting = activeStage === 'RESTING';
@@ -366,16 +368,16 @@ export const BatchKanbanCard: React.FC<BatchKanbanCardProps> = ({
                             onClick={() => canManageSettings && dispatch({ type: 'TOGGLE_BATCH_LOCK', payload: { projectId: project.id, batchId: batch.id } })}
                             disabled={!canManageSettings}
                             className={`p-2 rounded-full transition-colors ${!canManageSettings
-                                    ? 'opacity-50 cursor-not-allowed text-gray-400 bg-gray-100 dark:bg-gray-800'
-                                    : batch.isLocked
-                                        ? 'text-red-500 bg-red-50 dark:bg-red-900/20 hover:bg-red-100'
-                                        : 'text-gray-400 hover:text-brand-dark dark:hover:text-white bg-gray-100 dark:bg-gray-800'
+                                ? 'opacity-50 cursor-not-allowed text-gray-400 bg-gray-100 dark:bg-gray-800'
+                                : batch.isLocked
+                                    ? 'text-red-500 bg-red-50 dark:bg-red-900/20 hover:bg-red-100'
+                                    : 'text-gray-400 hover:text-brand-dark dark:hover:text-white bg-gray-100 dark:bg-gray-800'
                                 }`}
                             title={!canManageSettings ? 'Permission required to toggle locks' : batch.isLocked ? 'Unlock Bed' : 'Lock Bed from Top-ups'}
                         >
                             {batch.isLocked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
                         </button>
-                        <button onClick={onToggleCollapse} className="p-2 text-gray-400 hover:text-brand-dark dark:hover:text-white bg-gray-100 dark:bg-gray-800 rounded-full transition-colors" title="Expand Card">
+                        <button onClick={(e) => { e.stopPropagation(); onToggleCollapse(); }} className="p-2 text-gray-400 hover:text-brand-dark dark:hover:text-white bg-gray-100 dark:bg-gray-800 rounded-full transition-colors" title="Expand Card">
                             <ChevronDown className="w-4 h-4" />
                         </button>
                     </div>
@@ -427,7 +429,13 @@ export const BatchKanbanCard: React.FC<BatchKanbanCardProps> = ({
                                         </>
                                     ) : (
                                         <div className="flex items-center gap-3 mb-1">
-                                            <span className="font-black text-brand-dark dark:text-white text-lg tracking-tight">{batch.id}</span>
+                                            {activeStage === 'RESTING' ? (
+                                                <span className="font-black text-brand-dark dark:text-white text-lg tracking-tight">
+                                                    {state.dryingBeds.find(b => b.id === batch.dryingBedId)?.uniqueNumber || 'Unknown Bed'} - {formatDate(batch.history.find(h => h.stage === 'RESTING')?.startDate || new Date().toISOString())} - {batch.weight.toFixed(1)}kg
+                                                </span>
+                                            ) : (
+                                                <span className="font-black text-brand-dark dark:text-white text-lg tracking-tight">{batch.id}</span>
+                                            )}
                                             <Badge className="bg-gray-50 dark:bg-gray-900 text-brand-blue border border-brand-blue/30 font-bold px-2 py-0.5 whitespace-nowrap">
                                                 {batch.weight.toFixed(1)}kg
                                             </Badge>
@@ -464,7 +472,7 @@ export const BatchKanbanCard: React.FC<BatchKanbanCardProps> = ({
                                     )}
                                     <span className="flex items-center gap-1.5">
                                         <Clock className="w-3 h-3" />
-                                        {formatDate(new Date(batch.history[batch.history.length - 1]?.startDate || Date.now()))}
+                                        {formatDate(new Date(batch.history[batch.history.length - 1]?.startDate || new Date().toISOString()))}
                                     </span>
 
                                     {/* Put-Away details once stored */}
@@ -506,20 +514,17 @@ export const BatchKanbanCard: React.FC<BatchKanbanCardProps> = ({
                                 return (
                                     <div className="flex flex-col items-start lg:items-end w-full sm:w-auto mr-0 lg:mr-4">
                                         <span className="text-[10px] font-bold text-brand-red uppercase mb-1">Assign Drying Bed *</span>
-                                        <Select
+                                        <select
                                             value={inlineBedSelection}
-                                            onValueChange={setInlineBedSelection}
+                                            onChange={(e) => setInlineBedSelection(e.target.value)}
                                             disabled={isPending}
+                                            className="w-full sm:w-48 bg-white dark:bg-gray-900 border border-brand-red/30 rounded-md h-11 px-3 text-sm focus:ring-2 focus:ring-brand-blue outline-none disabled:opacity-50"
                                         >
-                                            <SelectTrigger className="w-full sm:w-48 bg-white dark:bg-gray-800 h-10 border-brand-red/30">
-                                                <SelectValue placeholder="Select Bed..." />
-                                            </SelectTrigger>
-                                            <SelectContent className="bg-white dark:bg-gray-800">
-                                                {availableBedsForInline.map(bed => (
-                                                    <SelectItem key={bed.id} value={bed.id}>Bed {bed.uniqueNumber}</SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
+                                            <option value="" disabled>Select Bed...</option>
+                                            {availableBedsForInline.map(bed => (
+                                                <option key={bed.id} value={bed.id}>Bed {bed.uniqueNumber}</option>
+                                            ))}
+                                        </select>
                                     </div>
                                 );
                             })()}
@@ -582,14 +587,14 @@ export const BatchKanbanCard: React.FC<BatchKanbanCardProps> = ({
 
                                         <div className="flex flex-col gap-2 w-full items-end mt-2">
                                             <div className="flex items-center gap-2 w-full md:w-auto">
-                                                <Select value={inlineBedSelection} onValueChange={(val) => { setInlineBedSelection(val); setPourSelectedContainers([]); }}>
-                                                    <SelectTrigger className="w-full sm:w-48 bg-white dark:bg-gray-800 h-10">
-                                                        <SelectValue placeholder="Select Target Bed..." />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        {availableBedsForPour.map(bed => <SelectItem key={bed.id} value={bed.id}>Bed {bed.uniqueNumber}</SelectItem>)}
-                                                    </SelectContent>
-                                                </Select>
+                                                <select 
+                                                    value={inlineBedSelection} 
+                                                    onChange={(e) => { setInlineBedSelection(e.target.value); setPourSelectedContainers([]); }}
+                                                    className="w-full sm:w-48 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-md h-11 px-3 text-sm focus:ring-2 focus:ring-brand-blue outline-none"
+                                                >
+                                                    <option value="" disabled>Select Target Bed...</option>
+                                                    {availableBedsForPour.map(bed => <option key={bed.id} value={bed.id}>Bed {bed.uniqueNumber}</option>)}
+                                                </select>
                                                 <Button
                                                     variant="outline"
                                                     disabled={!inlineBedSelection}
@@ -614,8 +619,34 @@ export const BatchKanbanCard: React.FC<BatchKanbanCardProps> = ({
                                 );
                             })()}
 
+                            {/* EQUIPMENT SELECTOR UI BLOCK */}
+                            {requiresEquipment && activeStage !== 'FLOATING' && !pendingPutAway && (
+                                <div className="w-full mt-4 bg-gray-50 dark:bg-gray-900/30 p-4 rounded-xl border border-gray-200 dark:border-gray-800 flex flex-col md:flex-row items-start md:items-center gap-4">
+                                    <div className="flex-1">
+                                        <h4 className="font-bold text-gray-800 dark:text-gray-300 flex items-center gap-2"><Settings className="w-4 h-4" /> Equipment Routing</h4>
+                                        <p className="text-xs text-gray-500 mt-1">Select the machine used for this processing stage.</p>
+                                    </div>
+                                    <div className="w-full md:w-auto">
+                                        <select 
+                                            value={selectedEquipmentId} 
+                                            onChange={(e) => setSelectedEquipmentId(e.target.value)} 
+                                            disabled={isPending}
+                                            className="w-full md:w-64 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-md h-11 px-3 text-sm focus:ring-2 focus:ring-brand-blue outline-none disabled:opacity-50"
+                                        >
+                                            <option value="" disabled>Choose Machine...</option>
+                                            {validEquipment.map(eq => (
+                                                <option key={eq.id} value={eq.id}>{eq.name}</option>
+                                            ))}
+                                            {validEquipment.length === 0 && (
+                                                <option value="none" disabled>No active equipment found</option>
+                                            )}
+                                        </select>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* HULLING PHYSICS UI BLOCK */}
-                            {activeStage === 'HULLING' && (
+                            {showHullingBlock && (
                                 <div className="w-full mt-4 bg-indigo-50 dark:bg-indigo-900/10 p-4 rounded-xl border border-indigo-200 dark:border-indigo-800 flex flex-col md:flex-row items-center gap-4">
                                     <div className="flex-1">
                                         <h4 className="font-bold text-indigo-800 dark:text-indigo-400 flex items-center gap-2"><Hammer className="w-4 h-4" /> Dry Mill: Hulling</h4>
@@ -642,12 +673,12 @@ export const BatchKanbanCard: React.FC<BatchKanbanCardProps> = ({
                                 </div>
                             )}
 
-                            {/* TRIFLEX MILLING SPLIT BLOCK */}
-                            {activeStage === 'TRIFLEX_MILLING' && (
+                            {/* GRADING SPLIT BLOCK */}
+                            {showGradingBlock && (
                                 <div className="w-full mt-4 bg-purple-50 dark:bg-purple-900/10 p-4 rounded-xl border border-purple-200 dark:border-purple-800 flex flex-col gap-4">
                                     <div className="flex justify-between items-start">
                                         <div>
-                                            <h4 className="font-bold text-purple-800 dark:text-purple-400 flex items-center gap-2"><Layers className="w-4 h-4" /> Triflex Milling & Grading</h4>
+                                            <h4 className="font-bold text-purple-800 dark:text-purple-400 flex items-center gap-2"><Layers className="w-4 h-4" /> Milling & Grading</h4>
                                             <p className="text-xs text-purple-700 dark:text-purple-500 mt-1">Split batch into up to 4 grades. Expected out: {triflexExpected.toFixed(1)}kg.</p>
                                         </div>
                                         <div className="text-right">
@@ -733,6 +764,7 @@ export const BatchKanbanCard: React.FC<BatchKanbanCardProps> = ({
                                         onChange={(newMain) => setPutAwayForm(p => ({ ...p, main: newMain }))}
                                         storageLocations={state.storageLocations}
                                         occupiedBins={occupiedBins}
+                                        availableBins={availableBinsList}
                                     />
 
                                     {hasRemainder && (
@@ -749,6 +781,7 @@ export const BatchKanbanCard: React.FC<BatchKanbanCardProps> = ({
                                                 onChange={(newRem) => setPutAwayForm(p => ({ ...p, rem: newRem }))}
                                                 storageLocations={state.storageLocations}
                                                 occupiedBins={occupiedBins}
+                                                availableBins={availableBinsList}
                                             />
                                         </div>
                                     )}
@@ -771,7 +804,7 @@ export const BatchKanbanCard: React.FC<BatchKanbanCardProps> = ({
                                     <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase mb-1">Resting Period</span>
                                     <Badge variant="secondary" className="bg-gray-100 dark:bg-stone-800 text-gray-600 dark:text-stone-300 border-gray-200 dark:border-stone-700 flex items-center gap-1.5">
                                         <Calendar className="w-3 h-3" />
-                                        Day {Math.max(0, dayDiff(new Date(batch.putAwayDate || batch.history.find(h => h.stage === 'RESTING')?.startDate || Date.now()), new Date()))}
+                                        Day {Math.max(0, dayDiff(new Date(batch.putAwayDate || batch.history.find(h => h.stage === 'RESTING')?.startDate || new Date().toISOString()), new Date()))}
                                     </Badge>
                                 </div>
                             )}
@@ -794,22 +827,23 @@ export const BatchKanbanCard: React.FC<BatchKanbanCardProps> = ({
                                         <Button
                                             variant="secondary"
                                             size="sm"
-                                            disabled={isPending || (requiresBedSelection && !inlineBedSelection) || (activeStage === 'HULLING' && !hullingWeight) || (activeStage === 'TRIFLEX_MILLING' && !isValidTriflex)}
+                                            disabled={isPending || (requiresBedSelection && !inlineBedSelection) || (showHullingBlock && !hullingWeight) || (showGradingBlock && !isValidTriflex) || (requiresEquipment && !selectedEquipmentId)}
                                             className="bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 text-brand-dark dark:text-white font-bold border border-gray-200 dark:border-gray-700 rounded-xl h-10 px-4"
                                             onClick={() => {
-                                                if (activeStage === 'HULLING') {
+                                                if (showHullingBlock) {
                                                     dispatch({
                                                         type: 'COMPLETE_PROCESSING_STEP',
                                                         payload: {
                                                             projectId: project.id,
                                                             batchId: batch.id,
-                                                            stage: 'HULLING',
+                                                            stage: activeStage,
+                                                            stages: selectedEquipment?.capabilities || [activeStage],
                                                             weightOut: parseFloat(hullingWeight),
                                                             endDate: new Date().toISOString().split('T')[0],
                                                             completedBy: 'System User'
                                                         }
                                                     });
-                                                } else if (activeStage === 'TRIFLEX_MILLING') {
+                                                } else if (showGradingBlock) {
                                                     const validSplits = triflexSplits
                                                         .filter(s => s.grade.trim() !== '' && parseFloat(s.weight) > 0)
                                                         .map(s => ({ grade: s.grade.trim(), weight: parseFloat(s.weight) }));
@@ -820,9 +854,23 @@ export const BatchKanbanCard: React.FC<BatchKanbanCardProps> = ({
                                                             projectId: project.id,
                                                             sourceBatchId: batch.id,
                                                             splits: validSplits,
-                                                            stage: 'TRIFLEX_MILLING',
+                                                            stage: activeStage,
+                                                            stages: selectedEquipment?.capabilities || [activeStage],
                                                             endDate: new Date().toISOString().split('T')[0],
                                                             completedBy: 'System User'
+                                                        }
+                                                    });
+                                                } else if (requiresEquipment) {
+                                                    dispatch({
+                                                        type: 'COMPLETE_PROCESSING_STEP',
+                                                        payload: {
+                                                            projectId: project.id,
+                                                            batchId: batch.id,
+                                                            stage: activeStage,
+                                                            stages: selectedEquipment?.capabilities || [activeStage],
+                                                            endDate: new Date().toISOString().split('T')[0],
+                                                            completedBy: 'System User',
+                                                            newBedId: inlineBedSelection
                                                         }
                                                     });
                                                 } else {
@@ -830,7 +878,7 @@ export const BatchKanbanCard: React.FC<BatchKanbanCardProps> = ({
                                                 }
                                             }}
                                         >
-                                            {activeStage === 'RESTING' ? 'End Resting' : activeStage === 'TRIFLEX_MILLING' ? 'Process & Split Batch' : `Move to ${nextStage ? STAGE_LABELS[nextStage] : 'Next'}`}
+                                            {activeStage === 'RESTING' ? 'End Resting' : showGradingBlock ? 'Process & Split Batch' : `Move to ${nextStage ? STAGE_LABELS[nextStage] : 'Next'}`}
                                             <ArrowRight className="w-4 h-4 ml-2 text-brand-blue" />
                                         </Button>
                                     )}
@@ -841,17 +889,17 @@ export const BatchKanbanCard: React.FC<BatchKanbanCardProps> = ({
                                                 onClick={() => canManageSettings && dispatch({ type: 'TOGGLE_BATCH_LOCK', payload: { projectId: project.id, batchId: batch.id } })}
                                                 disabled={!canManageSettings}
                                                 className={`p-2 rounded-full transition-colors ${!canManageSettings
-                                                        ? 'opacity-50 cursor-not-allowed text-gray-400 bg-gray-100 dark:bg-gray-800'
-                                                        : batch.isLocked
-                                                            ? 'text-red-500 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40'
-                                                            : 'text-gray-400 hover:text-brand-dark dark:hover:text-white bg-gray-100 dark:bg-gray-800'
+                                                    ? 'opacity-50 cursor-not-allowed text-gray-400 bg-gray-100 dark:bg-gray-800'
+                                                    : batch.isLocked
+                                                        ? 'text-red-500 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40'
+                                                        : 'text-gray-400 hover:text-brand-dark dark:hover:text-white bg-gray-100 dark:bg-gray-800'
                                                     }`}
                                                 title={!canManageSettings ? 'Permission required to toggle locks' : batch.isLocked ? 'Unlock Bed' : 'Lock Bed from Top-ups'}
                                             >
                                                 {batch.isLocked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
                                             </button>
                                             <button
-                                                onClick={() => isReadyToHarvest ? null : onToggleCollapse()}
+                                                onClick={(e) => { e.stopPropagation(); isReadyToHarvest ? null : onToggleCollapse(); }}
                                                 className={`ml-2 p-2 rounded-full transition-colors ${isReadyToHarvest ? 'text-green-500 bg-green-50 dark:bg-green-900/20 cursor-not-allowed opacity-50' : 'text-gray-400 hover:text-brand-dark dark:hover:text-white bg-gray-100 dark:bg-gray-800'}`}
                                                 title={isReadyToHarvest ? 'Harvest required. Cannot collapse.' : 'Collapse Card'}
                                             >
@@ -920,6 +968,7 @@ export const BatchKanbanCard: React.FC<BatchKanbanCardProps> = ({
                                     <div className="absolute right-3 top-2 flex items-center gap-2">
                                         <div className="w-3 h-0.5 border-t border-dashed border-green-500"></div>
                                         <span className="text-[10px] font-bold text-gray-400">Target {target}%</span>
+                                        {lastMoisture && <span className="text-[10px] font-bold text-brand-blue ml-3">Last: {lastMoisture}% ({formatDate(sortedLogs[sortedLogs.length - 1].date)})</span>}
                                     </div>
                                     <svg width="100%" height="100%" className="overflow-visible mt-6">
                                         {(() => {

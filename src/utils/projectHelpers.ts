@@ -63,10 +63,11 @@ export const defaultClientDetails: Omit<ClientDetails, 'id'> = {
     signature: ""
 };
 
-export const createNewProject = (name: string, tier: 'HIGH_COMMERCIAL' | 'TARGET_SPECIALTY' | 'MICRO_LOTS' = 'HIGH_COMMERCIAL', pipeline: ProcessingStage[] = ['RECEPTION', 'FLOATING', 'DESICCATION', 'RESTING']): Project => ({
+// Sprint 6: Added methodLabel parameter
+export const createNewProject = (name: string, methodId: string, pipeline: ProcessingStage[] = ['RECEPTION', 'FLOATING', 'DESICCATION', 'RESTING'], methodLabel?: string): Project => ({
     id: crypto.randomUUID(),
     name,
-    tier,
+    tier: 'HIGH_COMMERCIAL', // Fallback to satisfy existing data model requirements
     startDate: new Date().toISOString().split('T')[0],
     estDryingTimeDays: 15,
     estShrinkFactor: 6.25,
@@ -90,6 +91,8 @@ export const createNewProject = (name: string, tier: 'HIGH_COMMERCIAL' | 'TARGET
     deliveries: [],
 
     // Unified State Machine Arrays
+    processingMethodId: methodId,
+    processingMethodLabel: methodLabel,
     processingPipeline: pipeline,
     processingBatches: [],
 

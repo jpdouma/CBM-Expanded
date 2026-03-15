@@ -1,6 +1,7 @@
 // ==> src/reducers/operationsReducer.ts <==
 import type { ProjectState, Project, ProcessingBatch, ProcessingStage } from '../types';
 import { getWeek } from '../utils/formatters';
+import { getRecalculatedDryingBeds } from '../utils/projectHelpers';
 
 const updateProjectInState = (state: ProjectState, projectId: string, updateFn: (project: Project) => Project): ProjectState => {
     return {
@@ -12,8 +13,8 @@ const updateProjectInState = (state: ProjectState, projectId: string, updateFn: 
 export const operationsReducer = (state: ProjectState, action: any): ProjectState => {
     switch (action.type) {
         case 'ASSIGN_CONTAINERS': {
-            const { deliveryId, containerIds } = action.payload;
-            const project = state.projects.find(p => p.id === action.payload.projectId);
+            const { deliveryId, containerIds, projectId } = action.payload;
+            const project = state.projects.find(p => p.id === projectId);
             const delivery = project?.deliveries.find(d => d.id === deliveryId);
             if (!delivery) return state;
             let updatedContainers = [...(state.containers || [])];
@@ -32,7 +33,8 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
                             ...container,
                             weight: (container.weight || 0) + toAdd,
                             contributions: [...(container.contributions || []), { farmerId: delivery.farmerId, deliveryId: delivery.id, weight: toAdd }],
-                            status: 'IN_USE'
+                            status: 'IN_USE',
+                            currentProjectId: projectId // SPRINT 1.4: Strict Project Isolation
                         };
                         remainingToAssign -= toAdd;
                     }
@@ -64,7 +66,7 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
             });
             const updatedContainers = (state.containers || []).map(c =>
                 containerIds.includes(c.id)
-                    ? { ...c, weight: 0, contributions: [], status: 'AVAILABLE' as const }
+                    ? { ...c, weight: 0, contributions: [], status: 'AVAILABLE' as const, currentProjectId: undefined } // SPRINT 1.4: Reset Ownership
                     : c
             );
             // Phase 2: Re-written newBatchId logic for Wet Mill Physics
@@ -135,7 +137,8 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
                     ...updatedContainers[cIndex],
                     status: type === 'sinker' ? 'IN_USE' : 'QUARANTINED',
                     weight: netWeight,
-                    contributions: containerContributions
+                    contributions: containerContributions,
+                    currentProjectId: projectId
                 };
             }
 
@@ -268,7 +271,7 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
             const allOldCrateIds = sourceBatches.flatMap(b => b.containerIds);
             let updatedContainers = (state.containers || []).map(c => {
                 if (allOldCrateIds.includes(c.id)) {
-                    return { ...c, weight: 0, contributions: [], status: 'AVAILABLE' as const };
+                    return { ...c, weight: 0, contributions: [], status: 'AVAILABLE' as const, currentProjectId: undefined }; // SPRINT 1.4: Reset Ownership
                 }
                 return c;
             });
@@ -309,7 +312,8 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
                             ...updatedContainers[cIndex],
                             status: 'IN_USE',
                             weight: (updatedContainers[cIndex].weight || 0) + fillAmount,
-                            contributions: [...(updatedContainers[cIndex].contributions || []), ...containerContributions]
+                            contributions: [...(updatedContainers[cIndex].contributions || []), ...containerContributions],
+                            currentProjectId: projectId // SPRINT 1.4: Assign Ownership
                         };
                         remainingWeight -= fillAmount;
                     }
@@ -551,7 +555,7 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
                 });
             });
             const updatedContainers = (state.containers || []).map(c =>
-                containerIds.includes(c.id) ? { ...c, weight: 0, contributions: [], status: 'AVAILABLE' as const } : c
+                containerIds.includes(c.id) ? { ...c, weight: 0, contributions: [], status: 'AVAILABLE' as const, currentProjectId: undefined } : c
             );
             let updatedBatches = [...project.processingBatches];
             const existingBatchIndex = updatedBatches.findIndex(b => b.currentStage === 'DESICCATION' && b.dryingBedId === dryingBedId && b.status !== 'COMPLETED');
@@ -624,7 +628,7 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
             }));
 
             const updatedContainers = (state.containers || []).map(c =>
-                containerIds.includes(c.id) ? { ...c, weight: 0, contributions: [], status: 'AVAILABLE' as const } : c
+                containerIds.includes(c.id) ? { ...c, weight: 0, contributions: [], status: 'AVAILABLE' as const, currentProjectId: undefined } : c // SPRINT 1.4: Reset Ownership
             );
 
             let updatedBatches = [...project.processingBatches];
@@ -722,9 +726,8 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
         }
         case 'HARVEST_DRYING_BED': {
             const { projectId, batchId, driedWeight, bagCount, endDate, completedBy } = action.payload;
-            return updateProjectInState(state, projectId, p => ({
-                ...p,
-                processingBatches: p.processingBatches.map(b => {
+            return updateProjectInState(state, projectId, p => {
+                const updatedBatches = p.processingBatches.map(b => {
                     if (b.id !== batchId) return b;
 
                     const updatedHistory = [...b.history];
@@ -742,11 +745,19 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
                         bagWeightKg: bagCount > 0 ? driedWeight / bagCount : 70,
                         dryingBedId: undefined,
                         isLocked: false,
-                        currentStage: 'RESTING',
+                        currentStage: 'RESTING' as const,
                         history: updatedHistory
                     };
-                })
-            }));
+                });
+
+                const tempProject = { ...p, processingBatches: updatedBatches };
+                const { updatedBedIds } = getRecalculatedDryingBeds(tempProject, state.dryingBeds);
+
+                return {
+                    ...tempProject,
+                    dryingBedIds: updatedBedIds
+                };
+            });
         }
         case 'PUT_AWAY_BATCH': {
             const { projectId, batchId, putAwayDate, mainLocation, remainderLocation } = action.payload;
@@ -801,7 +812,7 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
             }));
         }
         case 'SPLIT_BATCH': {
-            const { projectId, sourceBatchId, splits, stage, endDate, completedBy } = action.payload;
+            const { projectId, sourceBatchId, splits, stage, stages, endDate, completedBy } = action.payload;
             const project = state.projects.find(p => p.id === projectId);
             if (!project) return state;
 
@@ -814,10 +825,15 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
             const activeStages = project.processingPipeline && project.processingPipeline.length > 0
                 ? project.processingPipeline
                 : (['RECEPTION', 'FLOATING', 'DESICCATION', 'RESTING'] as ProcessingStage[]);
-            const currentIndex = activeStages.indexOf(stage);
+
+            // Sprint 7: Determine next stage using stages array
+            const stagesArray = stages && stages.length > 0 ? stages : [stage];
+            const lastCompletedStage = stagesArray[stagesArray.length - 1];
+
+            const currentIndex = activeStages.indexOf(lastCompletedStage);
             const nextStage = currentIndex < activeStages.length - 1 && currentIndex !== -1
                 ? activeStages[currentIndex + 1]
-                : stage;
+                : lastCompletedStage;
 
             const newBatches: ProcessingBatch[] = splits.map((split: { grade: string, weight: number }) => {
                 const childTraceability = (sourceBatch.traceabilitySnapshot || []).map(snap => ({
@@ -826,25 +842,28 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
                 }));
 
                 const childHistory = [...sourceBatch.history];
-                const existingIndex = childHistory.findIndex(h => h.stage === stage && !h.endDate);
-                if (existingIndex !== -1) {
-                    childHistory[existingIndex] = {
-                        ...childHistory[existingIndex],
-                        endDate,
-                        completedBy,
-                        weightOut: split.weight
-                    };
-                } else {
-                    childHistory.push({
-                        stage,
-                        startDate: endDate,
-                        endDate,
-                        completedBy,
-                        weightOut: split.weight
-                    });
-                }
 
-                if (nextStage !== stage) {
+                stagesArray.forEach((s: ProcessingStage) => {
+                    const existingIndex = childHistory.findIndex(h => h.stage === s && !h.endDate);
+                    if (existingIndex !== -1) {
+                        childHistory[existingIndex] = {
+                            ...childHistory[existingIndex],
+                            endDate,
+                            completedBy,
+                            weightOut: split.weight
+                        };
+                    } else {
+                        childHistory.push({
+                            stage: s,
+                            startDate: endDate,
+                            endDate,
+                            completedBy,
+                            weightOut: split.weight
+                        });
+                    }
+                });
+
+                if (nextStage !== lastCompletedStage && !childHistory.some(h => h.stage === nextStage)) {
                     childHistory.push({
                         stage: nextStage,
                         startDate: endDate
@@ -876,12 +895,15 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
             const updatedBatches = project.processingBatches.map(b => {
                 if (b.id === sourceBatchId) {
                     const parentHistory = [...b.history];
-                    const pExistingIndex = parentHistory.findIndex(h => h.stage === stage && !h.endDate);
-                    if (pExistingIndex !== -1) {
-                        parentHistory[pExistingIndex] = { ...parentHistory[pExistingIndex], endDate, completedBy };
-                    } else {
-                        parentHistory.push({ stage, startDate: endDate, endDate, completedBy });
-                    }
+
+                    stagesArray.forEach((s: ProcessingStage) => {
+                        const pExistingIndex = parentHistory.findIndex(h => h.stage === s && !h.endDate);
+                        if (pExistingIndex !== -1) {
+                            parentHistory[pExistingIndex] = { ...parentHistory[pExistingIndex], endDate, completedBy };
+                        } else {
+                            parentHistory.push({ stage: s, startDate: endDate, endDate, completedBy });
+                        }
+                    });
 
                     return {
                         ...b,
@@ -1012,7 +1034,8 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
                         ...container,
                         contributions: keptContributions,
                         weight: newWeight,
-                        status: (newWeight > 0 ? 'IN_USE' : 'AVAILABLE') as 'IN_USE' | 'AVAILABLE'
+                        status: (newWeight > 0 ? 'IN_USE' : 'AVAILABLE') as 'IN_USE' | 'AVAILABLE',
+                        currentProjectId: newWeight > 0 ? container.currentProjectId : undefined // SPRINT 1.4: Reset Ownership
                     };
                 }
                 return container;
@@ -1036,7 +1059,8 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
                         ...container,
                         contributions: keptContributions,
                         weight: newWeight,
-                        status: (newWeight > 0 ? 'IN_USE' : 'AVAILABLE') as 'IN_USE' | 'AVAILABLE'
+                        status: (newWeight > 0 ? 'IN_USE' : 'AVAILABLE') as 'IN_USE' | 'AVAILABLE',
+                        currentProjectId: newWeight > 0 ? container.currentProjectId : undefined // SPRINT 1.4: Reset Ownership
                     };
                 }
                 return container;
@@ -1048,7 +1072,7 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
             const { containerIds } = action.payload;
             const updatedContainers = (state.containers || []).map(c =>
                 containerIds.includes(c.id)
-                    ? { ...c, weight: 0, contributions: [], status: 'AVAILABLE' as const }
+                    ? { ...c, weight: 0, contributions: [], status: 'AVAILABLE' as const, currentProjectId: undefined } // SPRINT 1.4: Reset Ownership
                     : c
             );
             return { ...state, containers: updatedContainers };

@@ -44,18 +44,22 @@ export const projectManagementReducer = (state: ProjectState, action: any): Proj
             };
         }
         case 'ADD_PROJECT': {
+            // Sprint 6: Extract methodId and methodLabel from payload
+            const { name, methodId, methodLabel, id } = action.payload;
             let determinedPipeline: ProcessingStage[] = ['RECEPTION', 'FLOATING', 'DESICCATION', 'RESTING'];
 
             if (state.processingMethods) {
-                const targetMethodId = action.payload.tier === 'HIGH_COMMERCIAL' ? 'method-washed' : 'method-natural';
-                const method = state.processingMethods.find(m => m.id === targetMethodId);
+                // Look up the selected method dynamically
+                const method = state.processingMethods.find(m => m.id === methodId);
                 if (method && method.pipeline && method.pipeline.length > 0) {
                     determinedPipeline = method.pipeline;
                 }
             }
 
-            const newProject = createNewProject(action.payload.name, action.payload.tier, determinedPipeline);
-            if (action.payload.id) newProject.id = action.payload.id;
+            // Create project with the selected methodId, dynamic pipeline, and the chosen label alias
+            const newProject = createNewProject(name, methodId, determinedPipeline, methodLabel);
+            if (id) newProject.id = id;
+
             return {
                 ...state,
                 projects: [...state.projects, newProject],

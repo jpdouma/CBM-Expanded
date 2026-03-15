@@ -10,7 +10,7 @@ import { PreProjectChecklist } from './components/setup/PreProjectChecklist';
 import { ActivityLog } from './components/ActivityLog';
 import { ClientSelectionSetup } from './components/setup/ClientSelectionSetup';
 import { FinancingSetup } from './components/setup/FinancingSetup';
-import { DryingBedsSetup } from './components/setup/DryingBedsSetup';
+import { DryingBedsSetup } from './components/settings/DryingBedsSetup';
 import { Dashboard } from './components/dashboard/Dashboard';
 import { OperationalDashboard } from './components/dashboard/OperationalDashboard';
 import { SettingsHub } from './components/settings/SettingsHub';
@@ -32,9 +32,10 @@ import { OutsourcedCostsDashboard } from './components/dashboards/OutsourcedCost
 import { ContainerManagement } from './components/settings/ContainerManagement';
 import { FloatingTanksSetup } from './components/settings/FloatingTanksSetup';
 import { ProcessingMethodManagement } from './components/settings/ProcessingMethodManagement';
-import type { ProcessingTier, Project } from './types';
+import { EquipmentManagement } from './components/settings/EquipmentManagement';
+import type { Project } from './types';
 
-type ActiveSetting = 'hub' | 'dryingBeds' | 'floatingTanks' | 'clients' | 'financiers' | 'storageLocations' | 'farmers' | 'users' | 'roles' | 'costing' | 'pricing' | 'containers' | 'processingMethods' | null;
+type ActiveSetting = 'hub' | 'dryingBeds' | 'floatingTanks' | 'clients' | 'financiers' | 'storageLocations' | 'farmers' | 'users' | 'roles' | 'costing' | 'pricing' | 'containers' | 'processingMethods' | 'equipment' | null;
 type ActiveSetupTab = 'setup' | 'client' | 'financing';
 type Module = 'PROJECT_SETUP' | 'OPERATIONS' | 'APPROVALS' | 'FINANCE' | 'DASHBOARDS' | 'ACTIVITY_LOG' | 'GLOBAL_INVENTORY';
 type SubTab =
@@ -49,6 +50,7 @@ const SettingsView: React.FC<{ activeSetting: ActiveSetting, setActiveSetting: (
         {activeSetting === 'hub' && <SettingsHub activeSetting={activeSetting} onNavigate={setActiveSetting}><div /></SettingsHub>}
         {activeSetting === 'dryingBeds' && <SettingsHub activeSetting={activeSetting} onNavigate={setActiveSetting}><DryingBedsSetup beds={state.dryingBeds || []} onAddBed={(bed) => dispatch({ type: 'ADD_DRYING_BED', payload: { bedData: bed } })} onUpdateBed={(id, updates) => dispatch({ type: 'UPDATE_DRYING_BED', payload: { bedId: id, updates } })} onDeleteBed={(id) => dispatch({ type: 'DELETE_DRYING_BED', payload: { bedId: id } })} /></SettingsHub>}
         {activeSetting === 'floatingTanks' && <SettingsHub activeSetting={activeSetting} onNavigate={setActiveSetting}><FloatingTanksSetup tanks={state.floatingTanks || []} onAddTank={(tank) => dispatch({ type: 'ADD_FLOATING_TANK', payload: { tankData: tank } })} onUpdateTank={(id, updates) => dispatch({ type: 'UPDATE_FLOATING_TANK', payload: { tankId: id, updates } })} onDeleteTank={(id) => dispatch({ type: 'DELETE_FLOATING_TANK', payload: { tankId: id } })} /></SettingsHub>}
+        {activeSetting === 'equipment' && <SettingsHub activeSetting={activeSetting} onNavigate={setActiveSetting}><EquipmentManagement equipment={state.equipment || []} onAddEquipment={(equipment) => dispatch({ type: 'ADD_EQUIPMENT', payload: { equipmentData: equipment } })} onUpdateEquipment={(id, updates) => dispatch({ type: 'UPDATE_EQUIPMENT', payload: { equipmentId: id, updates } })} onDeleteEquipment={(id) => dispatch({ type: 'DELETE_EQUIPMENT', payload: { equipmentId: id } })} /></SettingsHub>}
         {activeSetting === 'clients' && <SettingsHub activeSetting={activeSetting} onNavigate={setActiveSetting}><ClientManagement clients={state.clients} onAddClient={(client) => dispatch({ type: 'ADD_CLIENT', payload: { clientData: client } })} onUpdateClient={(id, updates) => dispatch({ type: 'UPDATE_CLIENT', payload: { clientId: id, updates } })} onDeleteClient={(id) => dispatch({ type: 'DELETE_CLIENT', payload: { clientId: id } })} /></SettingsHub>}
         {activeSetting === 'financiers' && <SettingsHub activeSetting={activeSetting} onNavigate={setActiveSetting}><FinancierManagement financiers={state.financiers} onAddFinancier={(financier) => dispatch({ type: 'ADD_FINANCIER', payload: { financierData: financier } })} onUpdateFinancier={(id, updates) => dispatch({ type: 'UPDATE_FINANCIER', payload: { financierId: id, updates } })} onDeleteFinancier={(id) => dispatch({ type: 'DELETE_FINANCIER', payload: { financierId: id } })} /></SettingsHub>}
         {activeSetting === 'storageLocations' && <SettingsHub activeSetting={activeSetting} onNavigate={setActiveSetting}><StorageLocationManagement locations={state.storageLocations} onAddLocation={(location) => dispatch({ type: 'ADD_STORAGE_LOCATION', payload: { locationData: location } })} onUpdateLocation={(id, updates) => dispatch({ type: 'UPDATE_STORAGE_LOCATION', payload: { locationId: id, updates } })} onDeleteLocation={(id) => dispatch({ type: 'DELETE_STORAGE_LOCATION', payload: { locationId: id } })} /></SettingsHub>}
@@ -57,7 +59,7 @@ const SettingsView: React.FC<{ activeSetting: ActiveSetting, setActiveSetting: (
         {activeSetting === 'roles' && <SettingsHub activeSetting={activeSetting} onNavigate={setActiveSetting}><RoleManagement roles={state.roles} onAddRole={(role) => dispatch({ type: 'ADD_ROLE', payload: { roleData: role } })} onUpdateRole={(id, updates) => dispatch({ type: 'UPDATE_ROLE', payload: { roleId: id, updates } })} onDeleteRole={(id) => dispatch({ type: 'DELETE_ROLE', payload: { roleId: id } })} onCloneRole={(id, newName) => dispatch({ type: 'CLONE_ROLE', payload: { roleId: id, newName } })} /></SettingsHub>}
         {activeSetting === 'costing' && <SettingsHub activeSetting={activeSetting} onNavigate={setActiveSetting}><CostingManagement settings={state.globalSettings} onUpdateSettings={(updates) => dispatch({ type: 'UPDATE_GLOBAL_SETTINGS', payload: { updates } })} /></SettingsHub>}
         {activeSetting === 'pricing' && <SettingsHub activeSetting={activeSetting} onNavigate={setActiveSetting}><PricingManagement prices={state.buyingPrices} onPublishPrices={(data) => dispatch({ type: 'PUBLISH_BUYING_PRICES', payload: { data } })} /></SettingsHub>}
-        {activeSetting === 'containers' && <SettingsHub activeSetting={activeSetting} onNavigate={setActiveSetting}><ContainerManagement containers={state.containers} onGenerate={(count, date) => dispatch({ type: 'GENERATE_CONTAINERS', payload: { count, date } })} onDelete={(id) => dispatch({ type: 'DELETE_CONTAINER', payload: { containerId: id } })} /></SettingsHub>}
+        {activeSetting === 'containers' && <SettingsHub activeSetting={activeSetting} onNavigate={setActiveSetting}><ContainerManagement containers={state.containers} onGenerate={(count, date, tareWeightKg) => dispatch({ type: 'GENERATE_CONTAINERS', payload: { count, date, tareWeightKg } })} onDeleteBulk={(ids) => dispatch({ type: 'DELETE_BULK_CONTAINERS', payload: { containerIds: ids } })} onImportBulk={(containers) => dispatch({ type: 'IMPORT_CONTAINERS', payload: { containers } })} /></SettingsHub>}
         {activeSetting === 'processingMethods' && <SettingsHub activeSetting={activeSetting} onNavigate={setActiveSetting}><ProcessingMethodManagement methods={state.processingMethods || []} onAddMethod={(method) => dispatch({ type: 'ADD_PROCESSING_METHOD', payload: { methodData: method } })} onUpdateMethod={(id, updates) => dispatch({ type: 'UPDATE_PROCESSING_METHOD', payload: { methodId: id, updates } })} onDeleteMethod={(id) => dispatch({ type: 'DELETE_PROCESSING_METHOD', payload: { methodId: id } })} /></SettingsHub>}
     </div>
 );
@@ -108,9 +110,9 @@ const MainAppContent: React.FC = () => {
         return <LoginScreen />;
     }
 
-    const handleAddProject = (name: string, tier: ProcessingTier) => {
+    const handleAddProject = (name: string, methodId: string, methodLabel?: string) => {
         if (!canEdit) return alert("Permission denied");
-        dispatch({ type: 'ADD_PROJECT', payload: { name, tier } });
+        dispatch({ type: 'ADD_PROJECT', payload: { name, methodId, methodLabel } });
     };
 
     const handleDeleteProject = (e: React.MouseEvent, projectId: string, projectName: string) => {
@@ -232,7 +234,9 @@ const MainAppContent: React.FC = () => {
                                 financiers: data.financiers,
                                 dryingBeds: data.dryingBeds,
                                 storageLocations: data.storageLocations || [],
-                                farmers: data.farmers || []
+                                farmers: data.farmers || [],
+                                equipment: data.equipment || [],
+                                processingMethods: data.processingMethods || []
                             }
                         });
                     } else if (Array.isArray(data)) {

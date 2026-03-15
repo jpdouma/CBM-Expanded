@@ -12,10 +12,11 @@ interface ProcessingMethodManagementProps {
     onDeleteMethod: (id: string) => void;
 }
 
+// Sprint 7: Removed TRIFLEX_MILLING and ECO_PULPER as they are physical machines, not biological/physical stages
 const AVAILABLE_STAGES: ProcessingStage[] = [
-    'RECEPTION', 'FLOATING', 'PULPING', 'ECO_PULPER', 'FERMENTATION',
+    'RECEPTION', 'FLOATING', 'PULPING', 'FERMENTATION',
     'ANAEROBIC_FERMENTATION', 'CARBONIC_MACERATION', 'THERMAL_SHOCK', 'WASHING',
-    'DESICCATION', 'RESTING', 'DE_STONING', 'HULLING', 'TRIFLEX_MILLING',
+    'DESICCATION', 'RESTING', 'DE_STONING', 'HULLING',
     'POLISHING', 'GRADING', 'DENSITY', 'COLOR_SORTING', 'EXPORT_READY'
 ];
 
@@ -27,7 +28,8 @@ export const ProcessingMethodManagement: React.FC<ProcessingMethodManagementProp
 }) => {
     const [isAdding, setIsAdding] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
-    const [formData, setFormData] = useState<Omit<ProcessingMethod, 'id' | 'isSystem'>>({
+    const [labelsInput, setLabelsInput] = useState('');
+    const [formData, setFormData] = useState<Omit<ProcessingMethod, 'id' | 'isSystem' | 'labels'>>({
         name: '',
         description: '',
         flavorProfile: '',
@@ -42,10 +44,15 @@ export const ProcessingMethodManagement: React.FC<ProcessingMethodManagementProp
             return;
         }
 
+        const finalData = {
+            ...formData,
+            labels: labelsInput.split(',').map(s => s.trim()).filter(Boolean)
+        };
+
         if (editingId) {
-            onUpdateMethod(editingId, formData);
+            onUpdateMethod(editingId, finalData);
         } else {
-            onAddMethod(formData);
+            onAddMethod(finalData);
         }
         resetForm();
     };
@@ -53,6 +60,7 @@ export const ProcessingMethodManagement: React.FC<ProcessingMethodManagementProp
     const resetForm = () => {
         setIsAdding(false);
         setEditingId(null);
+        setLabelsInput('');
         setFormData({ name: '', description: '', flavorProfile: '', pipeline: [] });
     };
 
@@ -63,12 +71,13 @@ export const ProcessingMethodManagement: React.FC<ProcessingMethodManagementProp
             flavorProfile: method.flavorProfile,
             pipeline: [...method.pipeline]
         });
+        setLabelsInput(method.labels?.join(', ') || '');
         setEditingId(method.id);
         setIsAdding(true);
     };
 
     const handleDelete = (method: ProcessingMethod) => {
-        if (window.confirm(`Are you sure you want to delete the "${method.name}" recipe?`)) {
+        if (window.confirm(`Are you sure you want to delete the "${method.name}" method?`)) {
             onDeleteMethod(method.id);
         }
     };
@@ -90,7 +99,7 @@ export const ProcessingMethodManagement: React.FC<ProcessingMethodManagementProp
             <div className="flex justify-between items-center">
                 <div>
                     <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                        <Beaker className="w-6 h-6 text-purple-400" /> Recipe Engine
+                        <Beaker className="w-6 h-6 text-purple-400" /> Method Engine
                     </h2>
                     <p className="text-gray-400">Design custom processing pipelines and flavor profiles.</p>
                 </div>
@@ -100,7 +109,7 @@ export const ProcessingMethodManagement: React.FC<ProcessingMethodManagementProp
                         className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-lg shadow-purple-900/20 font-bold"
                     >
                         <Icon name="plus" className="w-5 h-5" />
-                        Create Recipe
+                        Create Method
                     </button>
                 )}
             </div>
@@ -110,13 +119,13 @@ export const ProcessingMethodManagement: React.FC<ProcessingMethodManagementProp
                     <div className="flex justify-between items-center border-b border-gray-700 pb-4">
                         <h4 className="text-lg font-bold text-white flex items-center gap-2">
                             <Icon name={editingId ? 'pencil' : 'plus'} className="w-5 h-5 text-purple-500" />
-                            {editingId ? 'Edit Recipe' : 'Design New Recipe'}
+                            {editingId ? 'Edit Method' : 'Design New Method'}
                         </h4>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Recipe Name *</label>
+                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Method Name *</label>
                             <input
                                 type="text"
                                 required
@@ -145,6 +154,17 @@ export const ProcessingMethodManagement: React.FC<ProcessingMethodManagementProp
                                 className="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:ring-1 focus:ring-purple-500 outline-none"
                                 placeholder="Briefly describe the processing methodology..."
                             />
+                        </div>
+                        <div className="md:col-span-2">
+                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Aliases / Labels (Comma Separated)</label>
+                            <input
+                                type="text"
+                                value={labelsInput}
+                                onChange={e => setLabelsInput(e.target.value)}
+                                className="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:ring-1 focus:ring-purple-500 outline-none"
+                                placeholder="e.g., Extended Ferment, Client A Spec"
+                            />
+                            <p className="text-[10px] text-gray-500 mt-1">These will appear as separate selectable options in the Project Setup dropdown, routing to this same pipeline.</p>
                         </div>
                     </div>
 
@@ -203,7 +223,7 @@ export const ProcessingMethodManagement: React.FC<ProcessingMethodManagementProp
                             type="submit"
                             className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg font-bold transition-colors shadow-lg"
                         >
-                            {editingId ? 'Update Recipe' : 'Save Recipe'}
+                            {editingId ? 'Update Method' : 'Save Method'}
                         </button>
                     </div>
                 </form>
@@ -228,14 +248,14 @@ export const ProcessingMethodManagement: React.FC<ProcessingMethodManagementProp
                                     <button
                                         onClick={(e) => { e.stopPropagation(); handleEdit(method); }}
                                         className="p-2 text-gray-400 hover:text-purple-400 hover:bg-purple-900/20 rounded transition-colors"
-                                        title="Edit Recipe"
+                                        title="Edit Method"
                                     >
                                         <Icon name="pencil" className="w-4 h-4" />
                                     </button>
                                     <button
                                         onClick={(e) => { e.stopPropagation(); handleDelete(method); }}
                                         className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors"
-                                        title="Delete Recipe"
+                                        title="Delete Method"
                                     >
                                         <Icon name="trash" className="w-4 h-4" />
                                     </button>
@@ -245,6 +265,15 @@ export const ProcessingMethodManagement: React.FC<ProcessingMethodManagementProp
                             <div className="space-y-4 flex-grow">
                                 <div>
                                     <p className="text-sm text-gray-400 leading-relaxed">{method.description}</p>
+                                    {method.labels && method.labels.length > 0 && (
+                                        <div className="flex flex-wrap gap-1.5 mt-2">
+                                            {method.labels.map((label, idx) => (
+                                                <Badge key={idx} variant="outline" className="text-[9px] border-purple-500/30 text-purple-300 px-1.5 py-0">
+                                                    {label}
+                                                </Badge>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
 
                                 {method.flavorProfile && (
@@ -275,7 +304,7 @@ export const ProcessingMethodManagement: React.FC<ProcessingMethodManagementProp
                     {methods.length === 0 && !isAdding && (
                         <div className="col-span-full text-center py-12 bg-gray-800/50 rounded-xl border border-dashed border-gray-700">
                             <Beaker className="w-12 h-12 text-gray-600 mx-auto mb-4 opacity-50" />
-                            <p className="text-gray-500 italic font-medium">No processing recipes defined.</p>
+                            <p className="text-gray-500 italic font-medium">No processing methods defined.</p>
                         </div>
                     )}
                 </div>

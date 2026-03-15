@@ -56,6 +56,14 @@ export const masterDataReducer = (state: ProjectState, action: any): ProjectStat
             }
             return { ...state, floatingTanks: (state.floatingTanks || []).filter(t => t.id !== action.payload.tankId) };
 
+        // --- EQUIPMENT ---
+        case 'ADD_EQUIPMENT':
+            return { ...state, equipment: [...(state.equipment || []), { ...action.payload.equipmentData, id: action.payload.id || crypto.randomUUID() }] };
+        case 'UPDATE_EQUIPMENT':
+            return { ...state, equipment: (state.equipment || []).map(e => e.id === action.payload.equipmentId ? { ...e, ...action.payload.updates } : e) };
+        case 'DELETE_EQUIPMENT':
+            return { ...state, equipment: (state.equipment || []).filter(e => e.id !== action.payload.equipmentId) };
+
         // --- CLIENTS ---
         case 'ADD_CLIENT':
             return { ...state, clients: [...(state.clients || []), { ...defaultClientDetails, ...action.payload.clientData, id: crypto.randomUUID() }] };
@@ -142,6 +150,33 @@ export const masterDataReducer = (state: ProjectState, action: any): ProjectStat
             }
             return { ...state, containers: (state.containers || []).filter(c => c.id !== containerId) };
         }
+        case 'DELETE_BULK_CONTAINERS': {
+            const { containerIds } = action.payload;
+            const isInUse = state.projects.some(p => 
+                (p.processingBatches || []).some(b => 
+                    (b.containerIds || []).some(id => containerIds.includes(id))
+                )
+            );
+            if (isInUse) {
+                alert("Cannot delete: One or more selected containers are currently assigned to a processing batch.");
+                return state;
+            }
+            return {
+                ...state,
+                containers: (state.containers || []).filter(c => !containerIds.includes(c.id))
+            };
+        }
+        case 'IMPORT_CONTAINERS': {
+            const { containers } = action.payload;
+            const newContainers = containers.map((c: any) => ({
+                ...c,
+                id: crypto.randomUUID()
+            }));
+            return {
+                ...state,
+                containers: [...(state.containers || []), ...newContainers]
+            };
+        }
         case 'CLOSE_CONTAINER':
             return {
                 ...state,
@@ -210,7 +245,6 @@ export const masterDataReducer = (state: ProjectState, action: any): ProjectStat
             return { ...state, users: (state.users || []).map(u => u.id === action.payload.userId ? { ...u, ...action.payload.updates } : u) };
         case 'DELETE_USER':
             return { ...state, users: (state.users || []).filter(u => u.id !== action.payload.userId) };
-
         case 'ADD_ROLE':
             return { ...state, roles: [...(state.roles || []), { ...action.payload.roleData, id: crypto.randomUUID() }] };
         case 'UPDATE_ROLE':

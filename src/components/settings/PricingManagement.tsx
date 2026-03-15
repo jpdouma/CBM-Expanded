@@ -1,3 +1,4 @@
+// ==> src/components/settings/PricingManagement.tsx <==
 import React, { useState } from 'react';
 import type { BuyingPrices } from '../../types';
 import { Icon } from '../Icons';
@@ -14,15 +15,30 @@ export const PricingManagement: React.FC<PricingManagementProps> = ({ prices, on
     const [formData, setFormData] = useState({
         validFrom: new Date().toISOString().split('T')[0],
         validTo: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        unripe: '0',
-        earlyRipe: '0',
-        optimal: '0',
-        overRipe: '0',
+        unripe: '',
+        earlyRipe: '',
+        optimal: '',
+        overRipe: '',
         currency: 'UGX' as 'UGX' | 'USD' | 'EUR'
     });
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        // Validation: Check for Date Overlaps
+        const newStart = new Date(formData.validFrom).getTime();
+        const newEnd = new Date(formData.validTo).getTime();
+
+        const hasOverlap = prices.some(p => {
+            const existingStart = new Date(p.validFrom).getTime();
+            const existingEnd = new Date(p.validTo).getTime();
+            return newStart <= existingEnd && newEnd >= existingStart;
+        });
+
+        if (hasOverlap) {
+            alert("Error: This date range overlaps with an existing published price list.");
+            return;
+        }
         
         const submissionData: Omit<BuyingPrices, 'id'> = {
             ...formData,
@@ -40,6 +56,17 @@ export const PricingManagement: React.FC<PricingManagementProps> = ({ prices, on
         
         setIsAdding(false);
         alert("Prices published successfully.");
+        
+        // Reset form to blank values
+        setFormData({
+            validFrom: new Date().toISOString().split('T')[0],
+            validTo: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+            unripe: '',
+            earlyRipe: '',
+            optimal: '',
+            overRipe: '',
+            currency: 'UGX' as 'UGX' | 'USD' | 'EUR'
+        });
     };
 
     /**

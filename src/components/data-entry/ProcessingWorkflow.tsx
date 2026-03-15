@@ -14,14 +14,14 @@ import {
     ArrowUpDown,
     Eye,
     Truck,
-    CheckCircle2,
-    ArrowRight,
     Package,
     Container as ContainerIcon,
     ChevronsUpDown,
-    AlertCircle,
     Maximize,
-    Minimize
+    Minimize,
+    Droplet,
+    Thermometer,
+    ArrowRight
 } from 'lucide-react';
 import { useProjects } from '../../context/ProjectProvider';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -46,6 +46,10 @@ const STAGE_CONFIG: Record<ProcessingStage, { label: string; icon: any; color: s
     FLOATING: { label: 'Floating', icon: Waves, color: 'cyan' },
     PULPING: { label: 'Pulping', icon: Settings, color: 'indigo' },
     FERMENTATION: { label: 'Fermentation', icon: Beaker, color: 'purple' },
+    WASHING: { label: 'Washing', icon: Droplet, color: 'cyan' },
+    ANAEROBIC_FERMENTATION: { label: 'Anaerobic Fermentation', icon: Beaker, color: 'purple' },
+    CARBONIC_MACERATION: { label: 'Carbonic Maceration', icon: Beaker, color: 'pink' },
+    THERMAL_SHOCK: { label: 'Thermal Shock', icon: Thermometer, color: 'red' },
     DESICCATION: { label: 'Desiccation', icon: Sun, color: 'yellow' },
     RESTING: { label: 'Resting', icon: Clock, color: 'stone' },
     DE_STONING: { label: 'De-Stoning', icon: Filter, color: 'orange' },
@@ -73,7 +77,7 @@ const STAGE_ORDER: ProcessingStage[] = [
     'EXPORT_READY'
 ];
 
-const INDUSTRY_PRIMARY_STAGES: ProcessingStage[] = ['RECEPTION', 'FLOATING', 'PULPING', 'FERMENTATION', 'DESICCATION', 'RESTING'];
+const INDUSTRY_PRIMARY_STAGES: ProcessingStage[] = ['RECEPTION', 'FLOATING', 'PULPING', 'FERMENTATION', 'WASHING', 'ANAEROBIC_FERMENTATION', 'CARBONIC_MACERATION', 'THERMAL_SHOCK', 'DESICCATION', 'RESTING'];
 const INDUSTRY_SECONDARY_STAGES: ProcessingStage[] = ['DE_STONING', 'HULLING', 'POLISHING', 'GRADING', 'DENSITY', 'COLOR_SORTING', 'EXPORT_READY'];
 
 export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project }) => {
@@ -115,6 +119,26 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
         });
         return bins;
     }, [state.projects]);
+
+    // SPRINT 1.3: WMS Render Optimization - Calculate all available bins globally once
+    const globalAvailableBins = useMemo(() => {
+        const available: { facility: string, zone: string, row: string, pallet: string, level: string }[] = [];
+        state.storageLocations.forEach(location => {
+            (location.allowedZones || []).forEach(zone => {
+                (location.allowedRows || []).forEach(row => {
+                    (location.allowedPallets || []).forEach(pallet => {
+                        (location.allowedLevels || []).forEach(level => {
+                            const binStr = `${location.name}|${zone}|${row}|${pallet}|${level}`;
+                            if (!occupiedBins.has(binStr)) {
+                                available.push({ facility: location.name, zone, row, pallet, level });
+                            }
+                        });
+                    });
+                });
+            });
+        });
+        return available;
+    }, [state.storageLocations, occupiedBins]);
 
     // Helper: Dynamic Bed Gatekeeping
     const getAvailableBeds = (weightToAdd: number, excludeBatchId?: string) => {
@@ -253,8 +277,8 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
 
     const canManageStage = (stage: ProcessingStage) => {
         if (stage === 'RECEPTION') return canLogReception;
-        if (['FLOATING', 'PULPING', 'FERMENTATION', 'DESICCATION'].includes(stage)) return canManagePrimary;
-        if (['RESTING', 'DE_STONING', 'HULLING', 'POLISHING', 'GRADING', 'DENSITY', 'COLOR_SORTING'].includes(stage)) return canManageSecondary;
+        if (INDUSTRY_PRIMARY_STAGES.includes(stage)) return canManagePrimary;
+        if (INDUSTRY_SECONDARY_STAGES.includes(stage)) return canManageSecondary;
         if (stage === 'EXPORT_READY') return canApproveQuality;
         return false;
     };
@@ -446,6 +470,7 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
 
                                 {/* 2. DUMP CRATES TO FLOATING TANK / BED - Componentized */}
                                 <TankAssignmentPanel
+                                    project={project}
                                     containers={state.containers}
                                     farmers={state.farmers}
                                     floatingTanks={state.floatingTanks || []}
@@ -493,6 +518,7 @@ export const ProcessingWorkflow: React.FC<ProcessingWorkflowProps> = ({ project 
                                                         isCollapsed={isCollapsed}
                                                         onToggleCollapse={() => toggleCollapse(batch.id)}
                                                         occupiedBins={occupiedBins}
+                                                        availableBinsList={globalAvailableBins}
                                                         onMoveToNextStage={handleMoveToNextStage}
                                                     />
 

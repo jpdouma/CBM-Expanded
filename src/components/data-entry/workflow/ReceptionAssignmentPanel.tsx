@@ -19,55 +19,78 @@ export const ReceptionAssignmentPanel: React.FC<ReceptionAssignmentPanelProps> =
     onAssignContainers
 }) => {
     const [assigningDeliveryId, setAssigningDeliveryId] = useState<string | null>(null);
-    const [assignmentSelectedCrates, setAssignmentSelectedCrates] = useState<string[]>([]);
+    const [assignmentSelectedContainers, setAssignmentSelectedContainers] = useState<string[]>([]);
 
-    const handleSmartAutoFill = (unassignedWeight: number, availableCrates: Container[]) => {
+    const handleSmartAutoFill = (unassignedWeight: number, availableContainers: Container[]) => {
         let remainingToAssign = unassignedWeight;
         const selectedIds: string[] = [];
 
-        for (const crate of availableCrates) {
+        for (const container of availableContainers) {
             if (remainingToAssign <= 0) break;
 
-            const availableSpace = 48 - (crate.weight || 0);
+            const availableSpace = 48 - (container.weight || 0);
             if (availableSpace > 0) {
-                selectedIds.push(crate.id);
+                selectedIds.push(container.id);
                 remainingToAssign -= availableSpace;
             }
         }
 
-        setAssignmentSelectedCrates(selectedIds);
+        setAssignmentSelectedContainers(selectedIds);
     };
+
+    // 1. Calculate total consumed cherry per farmer across all processing batches
+    const farmerConsumedMap = new Map<string, number>();
+    project.processingBatches.forEach(b => {
+        (b.traceabilitySnapshot || []).forEach(snap => {
+            farmerConsumedMap.set(snap.farmerId, (farmerConsumedMap.get(snap.farmerId) || 0) + snap.weightKg);
+        });
+    });
+
+    // 2. Distribute consumed weight FIFO across chronological deliveries
+    const deliveryConsumption = new Map<string, number>();
+    const sortedDeliveries = [...project.deliveries].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const runningConsumption = new Map(farmerConsumedMap);
+    
+    sortedDeliveries.forEach(d => {
+        const remainingToConsume = runningConsumption.get(d.farmerId) || 0;
+        const consumedHere = Math.min(d.weight, remainingToConsume);
+        deliveryConsumption.set(d.id, consumedHere);
+        runningConsumption.set(d.farmerId, remainingToConsume - consumedHere);
+    });
 
     return (
         <div className="bg-gray-50/50 dark:bg-gray-800/30 p-6 rounded-2xl border border-gray-100 dark:border-gray-700/50 backdrop-blur-sm">
             <div className="mb-6">
                 <h3 className="text-lg font-heading font-black text-brand-dark dark:text-white uppercase tracking-tight flex items-center gap-2">
                     <ContainerIcon className="w-5 h-5 text-brand-blue" />
-                    1. Assign Deliveries to Physical Crates
+                    1. Assign Deliveries to Physical Containers
                 </h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Select an unassigned delivery and scan/select the physical AVAILABLE crates it was poured into.</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Select an unassigned delivery and scan/select the physical AVAILABLE containers it was poured into.</p>
             </div>
 
             <div className="grid grid-cols-1 gap-4">
                 {project.deliveries.map(d => {
-                    const assigned = containers.flatMap(c => c.contributions).filter(c => c.deliveryId === d.id).reduce((sum, c) => sum + c.weight, 0);
-                    const unassignedWeight = d.weight - assigned;
+                    const inCrates = containers.flatMap(c => c.contributions).filter(c => c.deliveryId === d.id).reduce((sum, c) => sum + c.weight, 0);
+                    const inBatches = deliveryConsumption.get(d.id) || 0;
 
-                    if (unassignedWeight <= 0) return null; // Fully assigned
+                    const unassignedWeight = d.weight - inCrates - inBatches;
 
-                    // Sort available crates to show partial fills first
-                    const availableCrates = containers
-                        .filter(c => c.status === 'AVAILABLE' || (c.status === 'IN_USE' && c.weight < 48))
+                    if (unassignedWeight <= 0.1) return null; // Fully assigned (using 0.1 to avoid float precision ghosting)
+
+                    // SPRINT 1.4: Strict Project Isolation added to filter
+                    // Sort available containers to show partial fills first
+                    const availableContainers = containers
+                        .filter(c => c.status === 'AVAILABLE' || (c.status === 'IN_USE' && c.weight < 48 && c.currentProjectId === project.id))
                         .sort((a, b) => b.weight - a.weight);
                     const isAssigning = assigningDeliveryId === d.id;
 
                     // Calculate dynamic capacity math for the active panel
-                    const selectedCapacity = assignmentSelectedCrates.reduce((sum, cid) => {
+                    const selectedCapacity = assignmentSelectedContainers.reduce((sum, cid) => {
                         const container = containers.find(x => x.id === cid);
                         return sum + (container ? 48 - container.weight : 0);
                     }, 0);
                     const remainingNeeded = Math.max(0, unassignedWeight - selectedCapacity);
-                    const estimatedCratesNeeded = Math.ceil(unassignedWeight / 48);
+                    const estimatedContainersNeeded = Math.ceil(unassignedWeight / 48);
 
                     return (
                         <div key={d.id} className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col overflow-hidden transition-all shadow-sm">
@@ -89,14 +112,14 @@ export const ReceptionAssignmentPanel: React.FC<ReceptionAssignmentPanelProps> =
                                         onClick={() => {
                                             if (isAssigning) {
                                                 setAssigningDeliveryId(null);
-                                                setAssignmentSelectedCrates([]);
+                                                setAssignmentSelectedContainers([]);
                                             } else {
                                                 setAssigningDeliveryId(d.id);
-                                                setAssignmentSelectedCrates([]);
+                                                setAssignmentSelectedContainers([]);
                                             }
                                         }}
                                     >
-                                        {isAssigning ? "Cancel Assignment" : "Assign Crates"}
+                                        {isAssigning ? "Cancel Assignment" : "Assign Containers"}
                                         {isAssigning ? <ChevronUp className="w-4 h-4 ml-2" /> : <ChevronDown className="w-4 h-4 ml-2" />}
                                     </Button>
                                 </div>
@@ -111,33 +134,11 @@ export const ReceptionAssignmentPanel: React.FC<ReceptionAssignmentPanelProps> =
                                         <div className="w-full md:w-64 flex-shrink-0 flex flex-col gap-4">
                                             <h4 className="text-sm font-bold text-brand-dark dark:text-white flex items-center gap-2 mb-2">
                                                 <ContainerIcon className="w-4 h-4 text-brand-blue" />
-                                                Requires ~{estimatedCratesNeeded} crates to hold {unassignedWeight.toFixed(1)}kg
+                                                Requires ~{estimatedContainersNeeded} containers to hold {unassignedWeight.toFixed(1)}kg
                                             </h4>
 
-                                            <div className="flex flex-col gap-2 mb-2">
-                                                <Button
-                                                    onClick={() => handleSmartAutoFill(unassignedWeight, availableCrates)}
-                                                    variant="outline"
-                                                    className="w-full border-brand-blue text-brand-blue hover:bg-brand-blue/10 dark:border-brand-blue dark:text-brand-blue font-bold h-10"
-                                                >
-                                                    <Sparkles className="w-4 h-4 mr-2" />
-                                                    Smart Auto-Fill
-                                                </Button>
-                                                <Button
-                                                    onClick={() => {
-                                                        if (assignmentSelectedCrates.length === 0) return;
-                                                        onAssignContainers(d.id, assignmentSelectedCrates);
-                                                        setAssigningDeliveryId(null);
-                                                        setAssignmentSelectedCrates([]);
-                                                    }}
-                                                    disabled={assignmentSelectedCrates.length === 0}
-                                                    className="w-full bg-green-600 hover:bg-green-700 text-white font-bold disabled:opacity-50 disabled:cursor-not-allowed shadow-sm h-12"
-                                                >
-                                                    Confirm Assignment ({assignmentSelectedCrates.length})
-                                                </Button>
-                                            </div>
-
-                                            <div className="flex flex-col gap-2 mt-auto">
+                                             {/* MATH BLOCK MOVED UP */}
+                                             <div className="flex flex-col gap-2 mb-4">
                                                 <div className="flex justify-between items-center bg-white dark:bg-gray-900 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
                                                     <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Selected Capacity</span>
                                                     <span className="font-black text-brand-dark dark:text-white">{selectedCapacity.toFixed(1)} kg</span>
@@ -147,25 +148,48 @@ export const ReceptionAssignmentPanel: React.FC<ReceptionAssignmentPanelProps> =
                                                     <span className={`font-black ${remainingNeeded > 0 ? 'text-brand-red' : 'text-green-500'}`}>{remainingNeeded.toFixed(1)} kg</span>
                                                 </div>
                                             </div>
+
+                                            <div className="flex flex-col gap-2 mt-auto">
+                                                <Button
+                                                    onClick={() => handleSmartAutoFill(unassignedWeight, availableContainers)}
+                                                    variant="outline"
+                                                    className="w-full border-brand-blue text-brand-blue hover:bg-brand-blue/10 dark:border-brand-blue dark:text-brand-blue font-bold h-10"
+                                                >
+                                                    <Sparkles className="w-4 h-4 mr-2" />
+                                                    Smart Auto-Fill
+                                                </Button>
+                                                <Button
+                                                    onClick={() => {
+                                                        if (assignmentSelectedContainers.length === 0) return;
+                                                        onAssignContainers(d.id, assignmentSelectedContainers);
+                                                        setAssigningDeliveryId(null);
+                                                        setAssignmentSelectedContainers([]);
+                                                    }}
+                                                    disabled={assignmentSelectedContainers.length === 0}
+                                                    className="w-full bg-green-600 hover:bg-green-700 text-white font-bold disabled:opacity-50 disabled:cursor-not-allowed shadow-sm h-12"
+                                                >
+                                                    Confirm Assignment ({assignmentSelectedContainers.length})
+                                                </Button>
+                                            </div>
                                         </div>
 
-                                        {/* RIGHT PANE: Vertical Scrolling Crate Stack */}
+                                        {/* RIGHT PANE: Vertical Scrolling Container Stack */}
                                         <div className="flex-1 min-w-0 border-l border-transparent md:border-gray-200 dark:md:border-gray-700 md:pl-6">
-                                            {availableCrates.length === 0 ? (
-                                                <div className="text-center py-8 text-sm text-gray-500 dark:text-gray-400 italic bg-white dark:bg-gray-900 rounded-lg border border-dashed border-gray-200 dark:border-gray-700 h-full flex items-center justify-center">
-                                                    No available crates. Please generate new containers in the Master Data settings.
+                                            {availableContainers.length === 0 ? (
+                                                <div className="text-center py-8 text-sm text-gray-500 dark:text-gray-400 italic bg-white dark:bg-gray-900 rounded-lg border border-dashed border-gray-200 dark:border-gray-700 h-[400px] flex items-center justify-center">
+                                                    No available containers. Please generate new containers in the Master Data settings.
                                                 </div>
                                             ) : (
-                                                <div className="grid grid-cols-2 xl:grid-cols-3 gap-3 overflow-y-auto max-h-[600px] pr-2 custom-scrollbar">
-                                                    {availableCrates.map(c => {
-                                                        const isSelected = assignmentSelectedCrates.includes(c.id);
+                                                <div className="grid grid-cols-2 xl:grid-cols-3 gap-3 overflow-y-auto h-[400px] lg:h-[500px] pr-2 custom-scrollbar">
+                                                    {availableContainers.map(c => {
+                                                        const isSelected = assignmentSelectedContainers.includes(c.id);
                                                         const isPartial = c.weight > 0;
                                                         const availableSpace = 48 - c.weight;
                                                         return (
                                                             <div
                                                                 key={c.id}
                                                                 onClick={() => {
-                                                                    setAssignmentSelectedCrates(prev => {
+                                                                    setAssignmentSelectedContainers(prev => {
                                                                         if (prev.includes(c.id)) return prev.filter(id => id !== c.id);
                                                                         return [...prev, c.id];
                                                                     });
@@ -218,13 +242,14 @@ export const ReceptionAssignmentPanel: React.FC<ReceptionAssignmentPanelProps> =
                 })}
 
                 {project.deliveries.every(d => {
-                    const assigned = containers.flatMap(c => c.contributions).filter(c => c.deliveryId === d.id).reduce((sum, c) => sum + c.weight, 0);
-                    return d.weight - assigned <= 0;
+                    const inCrates = containers.flatMap(c => c.contributions).filter(c => c.deliveryId === d.id).reduce((sum, c) => sum + c.weight, 0);
+                    const inBatches = deliveryConsumption.get(d.id) || 0;
+                    return d.weight - inCrates - inBatches <= 0.1;
                 }) && (
-                        <div className="text-center py-8 text-gray-500 italic">
-                            All recorded deliveries have been fully assigned to physical crates.
-                        </div>
-                    )}
+                    <div className="text-center py-8 text-gray-500 italic">
+                        All recorded deliveries have been fully assigned to physical containers.
+                    </div>
+                )}
             </div>
         </div>
     );

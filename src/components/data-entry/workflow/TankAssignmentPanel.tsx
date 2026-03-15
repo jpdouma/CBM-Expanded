@@ -3,10 +3,10 @@ import React, { useState } from 'react';
 import { Waves, Sun, Container as ContainerIcon, CheckCircle2, AlertCircle, Sparkles, Package } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Label } from '../../ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
-import type { Container, Farmer, FloatingTank, DryingBed, ProcessingStage } from '../../../types';
+import type { Container, Farmer, FloatingTank, DryingBed, ProcessingStage, Project } from '../../../types';
 
 interface TankAssignmentPanelProps {
+    project: Project;
     containers: Container[];
     farmers: Farmer[];
     floatingTanks: FloatingTank[];
@@ -16,6 +16,7 @@ interface TankAssignmentPanelProps {
 }
 
 export const TankAssignmentPanel: React.FC<TankAssignmentPanelProps> = ({
+    project,
     containers,
     farmers,
     floatingTanks,
@@ -31,8 +32,9 @@ export const TankAssignmentPanel: React.FC<TankAssignmentPanelProps> = ({
     const requiresBedForInit = initialStage === 'DESICCATION';
 
     // Strict WMS Sorting: Partial crates (< 48) at the absolute top, then sort by heaviest first
+    // SPRINT 1.4: Strict Project Isolation added to filter
     const availableCrates = containers
-        .filter(c => c.status === 'IN_USE')
+        .filter(c => c.status === 'IN_USE' && c.currentProjectId === project.id)
         .sort((a, b) => {
             const aIsPartial = a.weight < 48;
             const bIsPartial = b.weight < 48;
@@ -93,36 +95,32 @@ export const TankAssignmentPanel: React.FC<TankAssignmentPanelProps> = ({
                     {isGoingToWater && (
                         <div className="w-full">
                             <Label className="text-[10px] font-bold text-gray-400 uppercase mb-1.5 block">Target Floating Tank *</Label>
-                            <Select value={selectedTankId} onValueChange={setSelectedTankId}>
-                                <SelectTrigger className="bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 h-11 shadow-sm">
-                                    <SelectValue placeholder="Select Tank...">
-                                        {activeTank ? activeTank.name : undefined}
-                                    </SelectValue>
-                                </SelectTrigger>
-                                <SelectContent className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-                                    {floatingTanks.map(tank => (
-                                        <SelectItem key={tank.id} value={tank.id}>{tank.name} ({tank.capacityKg}kg)</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                            <select
+                                value={selectedTankId}
+                                onChange={(e) => setSelectedTankId(e.target.value)}
+                                className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-md h-11 px-3 text-sm focus:ring-2 focus:ring-brand-blue outline-none"
+                            >
+                                <option value="" disabled>Select Tank...</option>
+                                {floatingTanks.map(tank => (
+                                    <option key={tank.id} value={tank.id}>{tank.name} ({tank.capacityKg}kg)</option>
+                                ))}
+                            </select>
                         </div>
                     )}
 
                     {requiresBedForInit && (
                         <div className="w-full">
                             <Label className="text-[10px] font-bold text-gray-400 uppercase mb-1.5 block">Target Drying Bed *</Label>
-                            <Select value={selectedBedId} onValueChange={setSelectedBedId}>
-                                <SelectTrigger className="bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 h-11 shadow-sm">
-                                    <SelectValue placeholder="Select Bed...">
-                                        {activeBed ? activeBed.uniqueNumber : undefined}
-                                    </SelectValue>
-                                </SelectTrigger>
-                                <SelectContent className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-                                    {availableBeds.map(bed => (
-                                        <SelectItem key={bed.id} value={bed.id}>Bed {bed.uniqueNumber} ({bed.capacityKg}kg)</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                            <select
+                                value={selectedBedId}
+                                onChange={(e) => setSelectedBedId(e.target.value)}
+                                className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-md h-11 px-3 text-sm focus:ring-2 focus:ring-brand-blue outline-none"
+                            >
+                                <option value="" disabled>Select Bed...</option>
+                                {availableBeds.map(bed => (
+                                    <option key={bed.id} value={bed.id}>Bed {bed.uniqueNumber} ({bed.capacityKg}kg)</option>
+                                ))}
+                            </select>
                         </div>
                     )}
 

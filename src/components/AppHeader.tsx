@@ -1,15 +1,15 @@
 // ==> src/components/AppHeader.tsx <==
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Icon } from './Icons';
 import { Logo } from './Logo';
-import type { Project, ProcessingTier } from '../types';
+import type { Project } from '../types';
 import { useAuth } from '../context/AuthProvider';
 import { usePermissions } from '../hooks/usePermissions';
 import { useTheme } from '../context/ThemeProvider';
 import { useProjects } from '../context/ProjectProvider';
 
 interface AppHeaderProps {
-    activeSetting: 'hub' | 'dryingBeds' | 'floatingTanks' | 'clients' | 'financiers' | 'storageLocations' | 'farmers' | 'users' | 'roles' | 'costing' | 'pricing' | 'containers' | 'processingMethods' | null;
+    activeSetting: 'hub' | 'dryingBeds' | 'floatingTanks' | 'clients' | 'financiers' | 'storageLocations' | 'farmers' | 'users' | 'roles' | 'costing' | 'pricing' | 'containers' | 'processingMethods' | 'equipment' | null;
     onSettingsClick: () => void;
     onActivityLogClick: () => void;
     onImport: () => void;
@@ -18,7 +18,7 @@ interface AppHeaderProps {
     projects: Project[];
     selectedProjectIds: string[];
     onApplySelection: (projectIds: string[]) => void;
-    onAddProject: (name: string, tier: ProcessingTier) => void;
+    onAddProject: (name: string, methodId: string, methodLabel?: string) => void;
     onDeleteProject: (e: React.MouseEvent, projectId: string, projectName: string) => void;
     onSelectAllProjects?: () => void;
     onWipeProjects: (projectsToWipe: Project[]) => void;
@@ -44,7 +44,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
     const { state, dispatch, isSyncing } = useProjects();
     const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
     const [newProjectName, setNewProjectName] = useState('');
-    const [newProjectTier, setNewProjectTier] = useState<ProcessingTier>('HIGH_COMMERCIAL');
+    const [newProjectMethodId, setNewProjectMethodId] = useState('');
     const menuRef = useRef<HTMLDivElement>(null);
 
     // GHOST ID FIX: Filter out IDs that no longer exist in the projects array
@@ -74,11 +74,28 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         setIsProjectMenuOpen(!isProjectMenuOpen);
     };
 
+    const flattenedMethodOptions = useMemo(() => {
+        const options: { value: string; display: string }[] = [];
+        (state.processingMethods || []).forEach(m => {
+            if (m.labels && m.labels.length > 0) {
+                m.labels.forEach(label => {
+                    options.push({ value: `${m.id}::${label}`, display: label });
+                });
+            } else {
+                options.push({ value: `${m.id}::${m.name}`, display: m.name });
+            }
+        });
+        return options;
+    }, [state.processingMethods]);
+
     const handleAddNew = () => {
-        if (newProjectName.trim()) {
-            onAddProject(newProjectName.trim(), newProjectTier);
+        if (newProjectName.trim() && newProjectMethodId) {
+            const [mId, mLabel] = newProjectMethodId.split('::');
+            // If the label matches the base name exactly (fallback), we can just pass the name or undefined
+            // Passing the raw label handles both cases elegantly
+            onAddProject(newProjectName.trim(), mId, mLabel);
             setNewProjectName('');
-            setNewProjectTier('HIGH_COMMERCIAL');
+            setNewProjectMethodId('');
             setIsProjectMenuOpen(false); // Close dropdown
         }
     };
@@ -183,13 +200,14 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                                         />
                                     </div>
                                     <select
-                                        value={newProjectTier}
-                                        onChange={(e) => setNewProjectTier(e.target.value as ProcessingTier)}
+                                        value={newProjectMethodId}
+                                        onChange={(e) => setNewProjectMethodId(e.target.value)}
                                         className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-sm text-white focus:ring-1 focus:ring-green-500 outline-none"
                                     >
-                                        <option value="HIGH_COMMERCIAL">High Commercial (Tier 1)</option>
-                                        <option value="TARGET_SPECIALTY">Target Specialty (Tier 2)</option>
-                                        <option value="MICRO_LOTS">Micro-Lots (Tier 3)</option>
+                                        <option value="" disabled>Select a method...</option>
+                                        {flattenedMethodOptions.map((opt, idx) => (
+                                            <option key={idx} value={opt.value}>{opt.display}</option>
+                                        ))}
                                     </select>
                                 </div>
                             )}
@@ -204,7 +222,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                                 </button>
 
                                 <button
-                                    disabled={!newProjectName.trim()}
+                                    disabled={!newProjectName.trim() || !newProjectMethodId}
                                     onClick={handleAddNew}
                                     className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded-md font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
                                 >

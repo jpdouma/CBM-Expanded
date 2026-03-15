@@ -71,7 +71,11 @@ export const generateEUDRReport = (
 
     const aggregateMap = new Map<string, FarmerTraceabilityEntry & { batchName: string }>();
 
-    batches.forEach(batch => {
+    // SPRINT 1.1: EUDR Compliance Hardening
+    // Filter strictly to EXPORT_READY batches to avoid WIP mass inflation
+    const validBatches = batches.filter(b => b.currentStage === 'EXPORT_READY');
+
+    validBatches.forEach(batch => {
         const batchRef = `Batch-${batch.id.slice(0, 8)}`;
 
         const provenance = getBatchProvenance(batch, project, allFarmers);

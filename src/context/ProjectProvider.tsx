@@ -92,6 +92,7 @@ const initialState: ProjectState = {
     buyingPrices: [],
     paymentLines: [],
     containers: [],
+    equipment: [], // ADDED for Sprint 4
 };
 
 const getPersistedState = (): ProjectState => {
@@ -121,8 +122,14 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // Maintain a mutable ref of the state for synchronous access during dispatch wrapping
     const stateRef = useRef(state);
 
+    // SPRINT 1.2: Debounced Local Storage Persistence
+    // Offload heavy JSON.stringify from the UI thread
     useEffect(() => {
-        stateRef.current = state;
+        const timer = setTimeout(() => {
+            localStorage.setItem('cherry_erp_local_state', JSON.stringify(state));
+        }, 1000);
+
+        return () => clearTimeout(timer);
     }, [state]);
 
     // 1. Listen to Granular Firebase Collections (Reads)
@@ -133,7 +140,9 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const unsubProjects = db.collection("organizations/main/projects").onSnapshot(
             (snap) => {
                 const projects = snap.docs.map(doc => doc.data() as Project);
-                reactDispatch({ type: 'LOAD_STATE', payload: { projects } });
+                const action = { type: 'LOAD_STATE' as const, payload: { projects } };
+                reactDispatch(action);
+                stateRef.current = projectReducer(stateRef.current, action);
             },
             (error) => console.error("Firebase Projects Sync Error:", error)
         );
@@ -142,7 +151,9 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const unsubMaster = db.doc("organizations/main/masterData/global").onSnapshot(
             (doc) => {
                 if (doc.exists) {
-                    reactDispatch({ type: 'LOAD_STATE', payload: doc.data() });
+                    const action = { type: 'LOAD_STATE' as const, payload: doc.data() };
+                    reactDispatch(action);
+                    stateRef.current = projectReducer(stateRef.current, action);
                 } else {
                     // Seed initial empty state if the document doesn't exist yet
                     db.doc("organizations/main/masterData/global").set({
@@ -155,7 +166,9 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
                         buyingPrices: initialState.buyingPrices,
                         paymentLines: initialState.paymentLines,
                         globalSettings: initialState.globalSettings,
-                        processingMethods: initialState.processingMethods
+                        processingMethods: initialState.processingMethods,
+                        equipment: initialState.equipment, // ADDED for Sprint 4
+                        floatingTanks: initialState.floatingTanks // ADDED for Sprint 1.4
                     });
                 }
             },
@@ -166,7 +179,9 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const unsubAccess = db.doc("organizations/main/access/users").onSnapshot(
             (doc) => {
                 if (doc.exists) {
-                    reactDispatch({ type: 'LOAD_STATE', payload: doc.data() });
+                    const action = { type: 'LOAD_STATE' as const, payload: doc.data() };
+                    reactDispatch(action);
+                    stateRef.current = projectReducer(stateRef.current, action);
                 } else {
                     // Seed initial system role
                     db.doc("organizations/main/access/users").set({
@@ -189,29 +204,39 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     // 2. Wrapped Dispatch for Granular Writes
     const enhancedDispatch = useCallback(async (action: ProjectAction) => {
-        // A. Immediately update the local React UI
-        reactDispatch(action);
-
-        // B. Prevent echo loops (don't push incoming cloud data back to the cloud)
-        if (action.type === 'LOAD_STATE') return;
+        // A. Handle incoming Firebase syncs
+        if (action.type === 'LOAD_STATE') {
+            reactDispatch(action);
+            // Synchronously update ref so subsequent actions don't use stale state
+            stateRef.current = projectReducer(stateRef.current, action);
+            return;
+        }
 
         setIsSyncing(true);
         try {
-            // C. Calculate the exact new state synchronously to determine diffs
-            const nextState = projectReducer(stateRef.current, action);
+            const prevState = stateRef.current;
+            
+            // B. Calculate next state synchronously
+            const nextState = projectReducer(prevState, action);
 
-            // D. Local-First Persistence
-            localStorage.setItem('cherry_erp_local_state', JSON.stringify(nextState));
+            // C. CRITICAL FIX: Instantly update the ref to prevent rapid-dispatch race conditions
+            stateRef.current = nextState;
+
+            // D. Trigger React UI render
+            reactDispatch(action);
+
+            // SPRINT 1.2: Local-First Persistence removed from here. Handled by debounced useEffect above.
 
             // Diff 1: Projects Collection
-            if (nextState.projects !== stateRef.current.projects) {
-                const currentProjects = stateRef.current.projects;
+            if (nextState.projects !== prevState.projects) {
+                const currentProjects = prevState.projects;
 
                 // Handle Additions and Updates
                 for (const p of nextState.projects) {
                     const oldP = currentProjects.find(old => old.id === p.id);
                     if (p !== oldP) {
-                        await db.collection('organizations/main/projects').doc(p.id).set(p);
+                        const cleanProject = JSON.parse(JSON.stringify(p));
+                        await db.collection('organizations/main/projects').doc(p.id).set(cleanProject);
                     }
                 }
 
@@ -224,28 +249,31 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
             }
 
             // Diff 2: Master Data Document
-            const masterKeys = ['farmers', 'clients', 'financiers', 'dryingBeds', 'storageLocations', 'containers', 'buyingPrices', 'paymentLines', 'globalSettings', 'processingMethods'] as const;
-            const masterDataChanged = masterKeys.some(key => nextState[key] !== stateRef.current[key]);
+            // UPDATED masterKeys for Sprint 4 Equipment addition and Sprint 1.4 floatingTanks addition
+            const masterKeys = ['farmers', 'clients', 'financiers', 'dryingBeds', 'storageLocations', 'containers', 'buyingPrices', 'paymentLines', 'globalSettings', 'processingMethods', 'equipment', 'floatingTanks'] as const;
+            const masterDataChanged = masterKeys.some(key => nextState[key] !== prevState[key]);
 
             if (masterDataChanged) {
                 const masterPayload: any = {};
                 masterKeys.forEach(k => masterPayload[k] = nextState[k]);
-                await db.doc('organizations/main/masterData/global').set(masterPayload, { merge: true });
+                const cleanMaster = JSON.parse(JSON.stringify(masterPayload));
+                await db.doc('organizations/main/masterData/global').set(cleanMaster, { merge: true });
             }
 
             // Diff 3: Access Control Document
             const accessKeys = ['users', 'roles'] as const;
-            const accessChanged = accessKeys.some(key => nextState[key] !== stateRef.current[key]);
+            const accessChanged = accessKeys.some(key => nextState[key] !== prevState[key]);
 
             if (accessChanged) {
                 const accessPayload: any = {};
                 accessKeys.forEach(k => accessPayload[k] = nextState[k]);
-                await db.doc('organizations/main/access/users').set(accessPayload, { merge: true });
+                const cleanAccess = JSON.parse(JSON.stringify(accessPayload));
+                await db.doc('organizations/main/access/users').set(cleanAccess, { merge: true });
             }
 
         } catch (error) {
             console.error("Granular Firebase Sync Write Error:", error);
-            // alert("Failed to sync to the cloud. Please check your connection.");
+            alert("Database Sync Error: " + (error as Error).message);
         } finally {
             setIsSyncing(false);
         }

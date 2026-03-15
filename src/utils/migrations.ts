@@ -174,6 +174,7 @@ export const migrateLegacyState = (parsedState: any): ProjectState => {
         buyingPrices: parsedState.buyingPrices || [],
         paymentLines: parsedState.paymentLines || [],
         containers: parsedState.containers || [],
+        equipment: parsedState.equipment || [], // SPRINT 8 FIX
         globalCurrency: parsedState.globalCurrency || 'USD',
         processingMethods: parsedState.processingMethods?.length ? parsedState.processingMethods : defaultProcessingMethods,
     };
