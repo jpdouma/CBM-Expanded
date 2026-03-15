@@ -6,8 +6,8 @@ import { usePermissions } from '../../hooks/usePermissions';
 import { useProjects } from '../../context/ProjectProvider';
 
 interface SettingsHubProps {
-    activeSetting: 'hub' | 'dryingBeds' | 'floatingTanks' | 'clients' | 'financiers' | 'storageLocations' | 'farmers' | 'users' | 'roles' | 'costing' | 'pricing' | 'containers' | null;
-    onNavigate: (setting: 'hub' | 'dryingBeds' | 'floatingTanks' | 'clients' | 'financiers' | 'storageLocations' | 'farmers' | 'users' | 'roles' | 'costing' | 'pricing' | 'containers' | null) => void;
+    activeSetting: 'hub' | 'dryingBeds' | 'floatingTanks' | 'clients' | 'financiers' | 'storageLocations' | 'farmers' | 'users' | 'roles' | 'costing' | 'pricing' | 'containers' | 'processingMethods' | null;
+    onNavigate: (setting: 'hub' | 'dryingBeds' | 'floatingTanks' | 'clients' | 'financiers' | 'storageLocations' | 'farmers' | 'users' | 'roles' | 'costing' | 'pricing' | 'containers' | 'processingMethods' | null) => void;
     children: React.ReactNode;
 }
 
@@ -44,6 +44,12 @@ export const SettingsHub: React.FC<SettingsHubProps> = ({ activeSetting, onNavig
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <SettingCard
+                        title="Recipe Engine"
+                        description="Design custom processing pipelines and flavor profiles."
+                        icon="beaker"
+                        onClick={() => onNavigate('processingMethods')}
+                    />
                     <SettingCard
                         title="Client Directory"
                         description="Manage buyers, their contact information, and default preferences."
@@ -139,6 +145,7 @@ export const SettingsHub: React.FC<SettingsHubProps> = ({ activeSetting, onNavig
                     {activeSetting === 'costing' && 'Standard Costing'}
                     {activeSetting === 'pricing' && 'Buying Prices'}
                     {activeSetting === 'containers' && 'Container Management'}
+                    {activeSetting === 'processingMethods' && 'Recipe Engine'}
                 </h2>
                 <button onClick={() => onNavigate(null)} className="ml-auto text-gray-400 hover:text-white">
                     <Icon name="xMark" className="w-6 h-6" />

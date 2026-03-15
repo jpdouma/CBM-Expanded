@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { Icon } from '../Icons';
 import type { Container } from '../../types';
+import { useProjects } from '../../context/ProjectProvider';
 
 interface ContainerManagementProps {
     containers: Container[];
@@ -10,13 +11,29 @@ interface ContainerManagementProps {
 }
 
 export const ContainerManagement: React.FC<ContainerManagementProps> = ({ containers, onGenerate, onDelete }) => {
+    const { dispatch } = useProjects();
     const [count, setCount] = useState(10);
     const [tareWeightKg, setTareWeightKg] = useState(1.5);
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+    const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
     const handleGenerate = (e: React.FormEvent) => {
         e.preventDefault();
         onGenerate(count, date, tareWeightKg);
+    };
+
+    const handleDeleteSelected = () => {
+        if (window.confirm(`Are you sure you want to delete ${selectedIds.length} container(s)?`)) {
+            selectedIds.forEach(id => onDelete(id));
+            setSelectedIds([]);
+        }
+    };
+
+    const handleForceEmptySelected = () => {
+        if (window.confirm(`Are you sure you want to force empty these containers? This will wipe their current mass-balance data.`)) {
+            dispatch({ type: 'FORCE_EMPTY_CONTAINERS', payload: { containerIds: selectedIds } });
+            setSelectedIds([]);
+        }
     };
 
     return (
@@ -58,12 +75,34 @@ export const ContainerManagement: React.FC<ContainerManagementProps> = ({ contai
                             className="bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:ring-1 focus:ring-green-500 outline-none"
                         />
                     </div>
-                    <button
-                        type="submit"
-                        className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded font-bold transition-all shadow-lg shadow-green-900/20"
-                    >
-                        Generate 60L Containers
-                    </button>
+                    <div className="flex gap-2">
+                        <button
+                            type="submit"
+                            className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded font-bold transition-all shadow-lg shadow-green-900/20"
+                        >
+                            Generate 60L Containers
+                        </button>
+                        {selectedIds.length > 0 && (
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={handleForceEmptySelected}
+                                    className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded font-bold transition-all shadow-lg shadow-amber-900/20 flex items-center gap-2"
+                                >
+                                    <Icon name="refresh" className="w-4 h-4" />
+                                    Force Empty Selected ({selectedIds.length})
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleDeleteSelected}
+                                    className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded font-bold transition-all shadow-lg shadow-red-900/20 flex items-center gap-2"
+                                >
+                                    <Icon name="trash" className="w-4 h-4" />
+                                    Delete Selected ({selectedIds.length})
+                                </button>
+                            </>
+                        )}
+                    </div>
                 </form>
                 <p className="text-xs text-gray-500 mt-3 italic">
                     Containers will be auto-named using the format MMYYYY-000 based on the reference date.
@@ -71,23 +110,53 @@ export const ContainerManagement: React.FC<ContainerManagementProps> = ({ contai
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                {containers.map(container => (
-                    <div key={container.id} className="bg-gray-800 p-3 rounded-lg border border-gray-700 flex flex-col items-center group relative">
-                        <div className="text-xs font-mono text-blue-400 mb-1">{container.label}</div>
-                        <div className="text-[10px] text-gray-500 uppercase">60L Capacity</div>
-                        {container.tareWeightKg !== undefined && (
-                            <div className="text-[10px] text-gray-400">Tare: {container.tareWeightKg}kg</div>
-                        )}
-
-                        <button
-                            onClick={() => { if (confirm(`Delete container ${container.label}?`)) onDelete(container.id); }}
-                            className="absolute -top-2 -right-2 bg-red-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
-                            title="Delete Container"
+                {containers.map(container => {
+                    const isSelected = selectedIds.includes(container.id);
+                    return (
+                        <div
+                            key={container.id}
+                            className={`p-3 rounded-lg border flex flex-col items-center group relative transition-colors ${isSelected ? 'bg-gray-700 border-green-500' : 'bg-gray-800 border-gray-700'}`}
                         >
-                            <Icon name="trash" className="w-3 h-3" />
-                        </button>
-                    </div>
-                ))}
+                            <div className="absolute top-2 right-2">
+                                <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={(e) => {
+                                        if (e.target.checked) {
+                                            setSelectedIds(prev => [...prev, container.id]);
+                                        } else {
+                                            setSelectedIds(prev => prev.filter(id => id !== container.id));
+                                        }
+                                    }}
+                                    className="w-4 h-4 cursor-pointer accent-green-500"
+                                    title="Select container"
+                                />
+                            </div>
+
+                            <div className="text-xs font-mono text-blue-400 mb-1 mt-3">{container.label}</div>
+                            <div className="text-[10px] text-gray-500 uppercase flex items-center gap-1">
+                                {container.status === 'AVAILABLE' ? (
+                                    <span className="text-green-500">Available</span>
+                                ) : container.status === 'IN_USE' ? (
+                                    <span className="text-brand-blue">{container.weight.toFixed(1)}kg In Use</span>
+                                ) : (
+                                    <span className="text-amber-500">Quarantined</span>
+                                )}
+                            </div>
+                            {container.tareWeightKg !== undefined && (
+                                <div className="text-[10px] text-gray-400">Tare: {container.tareWeightKg}kg</div>
+                            )}
+
+                            <button
+                                onClick={() => { if (window.confirm(`Delete container ${container.label}?`)) onDelete(container.id); }}
+                                className="absolute -top-2 -right-2 bg-red-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                                title="Delete Container"
+                            >
+                                <Icon name="trash" className="w-3 h-3" />
+                            </button>
+                        </div>
+                    );
+                })}
                 {containers.length === 0 && (
                     <div className="col-span-full text-center py-12 bg-gray-800/50 rounded-xl border border-dashed border-gray-700">
                         <p className="text-gray-500 italic">No containers generated yet.</p>

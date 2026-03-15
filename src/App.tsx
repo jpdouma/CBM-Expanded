@@ -31,13 +31,14 @@ import { QualityApprovalDashboard } from './components/dashboards/QualityApprova
 import { OutsourcedCostsDashboard } from './components/dashboards/OutsourcedCostsDashboard';
 import { ContainerManagement } from './components/settings/ContainerManagement';
 import { FloatingTanksSetup } from './components/settings/FloatingTanksSetup';
+import { ProcessingMethodManagement } from './components/settings/ProcessingMethodManagement';
 import type { ProcessingTier, Project } from './types';
 
-type ActiveSetting = 'hub' | 'dryingBeds' | 'floatingTanks' | 'clients' | 'financiers' | 'storageLocations' | 'farmers' | 'users' | 'roles' | 'costing' | 'pricing' | 'containers' | null;
+type ActiveSetting = 'hub' | 'dryingBeds' | 'floatingTanks' | 'clients' | 'financiers' | 'storageLocations' | 'farmers' | 'users' | 'roles' | 'costing' | 'pricing' | 'containers' | 'processingMethods' | null;
 type ActiveSetupTab = 'setup' | 'client' | 'financing';
 type Module = 'PROJECT_SETUP' | 'OPERATIONS' | 'APPROVALS' | 'FINANCE' | 'DASHBOARDS' | 'ACTIVITY_LOG' | 'GLOBAL_INVENTORY';
 type SubTab =
-    | 'setup'                                   // PROJECT_SETUP
+    | 'setup'                     // PROJECT_SETUP
     | 'cherryDeliveries' | 'processingWorkflow' // OPERATIONS
     | 'qualityApprovals' | 'pendingPayments'    // APPROVALS
     | 'paymentsAdvances' | 'outsourcedCosts'    // FINANCE
@@ -57,6 +58,7 @@ const SettingsView: React.FC<{ activeSetting: ActiveSetting, setActiveSetting: (
         {activeSetting === 'costing' && <SettingsHub activeSetting={activeSetting} onNavigate={setActiveSetting}><CostingManagement settings={state.globalSettings} onUpdateSettings={(updates) => dispatch({ type: 'UPDATE_GLOBAL_SETTINGS', payload: { updates } })} /></SettingsHub>}
         {activeSetting === 'pricing' && <SettingsHub activeSetting={activeSetting} onNavigate={setActiveSetting}><PricingManagement prices={state.buyingPrices} onPublishPrices={(data) => dispatch({ type: 'PUBLISH_BUYING_PRICES', payload: { data } })} /></SettingsHub>}
         {activeSetting === 'containers' && <SettingsHub activeSetting={activeSetting} onNavigate={setActiveSetting}><ContainerManagement containers={state.containers} onGenerate={(count, date) => dispatch({ type: 'GENERATE_CONTAINERS', payload: { count, date } })} onDelete={(id) => dispatch({ type: 'DELETE_CONTAINER', payload: { containerId: id } })} /></SettingsHub>}
+        {activeSetting === 'processingMethods' && <SettingsHub activeSetting={activeSetting} onNavigate={setActiveSetting}><ProcessingMethodManagement methods={state.processingMethods || []} onAddMethod={(method) => dispatch({ type: 'ADD_PROCESSING_METHOD', payload: { methodData: method } })} onUpdateMethod={(id, updates) => dispatch({ type: 'UPDATE_PROCESSING_METHOD', payload: { methodId: id, updates } })} onDeleteMethod={(id) => dispatch({ type: 'DELETE_PROCESSING_METHOD', payload: { methodId: id } })} /></SettingsHub>}
     </div>
 );
 

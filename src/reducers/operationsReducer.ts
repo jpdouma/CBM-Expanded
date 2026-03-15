@@ -588,14 +588,20 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
             return { ...state, containers: updatedContainers, projects: state.projects.map(p => p.id === projectId ? { ...p, processingBatches: updatedBatches } : p) };
         }
         case 'POUR_BATCH_TO_BED': {
-            const { projectId, batchId, dryingBedId } = action.payload;
+            const { projectId, batchId, dryingBedId, containerIds } = action.payload;
             const project = state.projects.find(p => p.id === projectId);
             if (!project) return state;
 
-            const batch = project.processingBatches.find(b => b.id === batchId);
-            if (!batch) return state;
+            const sourceBatch = project.processingBatches.find(b => b.id === batchId);
+            if (!sourceBatch) return state;
 
             const targetBed = state.dryingBeds.find(b => b.id === dryingBedId);
+
+            const containersToPour = (state.containers || []).filter(c => containerIds.includes(c.id));
+            const pouredWeight = containersToPour.reduce((sum, c) => sum + c.weight, 0);
+
+            if (pouredWeight <= 0) return state;
+
             if (targetBed) {
                 const activeBedBatches = project.processingBatches.filter(b => b.currentStage === 'DESICCATION' && b.dryingBedId === dryingBedId && b.status !== 'COMPLETED' && b.id !== batchId);
                 if (activeBedBatches.some(b => b.isLocked)) {
@@ -604,18 +610,110 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
                 }
 
                 const currentBedLoad = activeBedBatches.reduce((sum, b) => sum + b.weight, 0);
-                if (currentBedLoad + batch.weight > targetBed.capacityKg + 10) {
+                if (currentBedLoad + pouredWeight > targetBed.capacityKg + 10) {
                     console.warn(`POUR_BATCH_TO_BED rejected: Exceeds capacity of bed ${targetBed.uniqueNumber}`);
                     return state;
                 }
             }
 
+            const pouredRatio = pouredWeight / sourceBatch.weight;
+
+            const pouredSnapshot = (sourceBatch.traceabilitySnapshot || []).map(snap => ({
+                farmerId: snap.farmerId,
+                weightKg: snap.weightKg * pouredRatio
+            }));
+
             const updatedContainers = (state.containers || []).map(c =>
-                (batch.containerIds || []).includes(c.id) ? { ...c, weight: 0, contributions: [], status: 'AVAILABLE' as const } : c
+                containerIds.includes(c.id) ? { ...c, weight: 0, contributions: [], status: 'AVAILABLE' as const } : c
             );
-            const updatedBatches = project.processingBatches.map(b =>
-                b.id === batchId ? { ...b, dryingBedId, containerIds: [] } : b
-            );
+
+            let updatedBatches = [...project.processingBatches];
+            const isFullPour = containerIds.length === (sourceBatch.containerIds || []).length;
+
+            const existingBatchIndex = updatedBatches.findIndex(b => b.currentStage === 'DESICCATION' && b.dryingBedId === dryingBedId && b.status !== 'COMPLETED' && b.id !== batchId);
+
+            if (existingBatchIndex !== -1) {
+                // Merge into existing active batch on this bed
+                const existingBatch = updatedBatches[existingBatchIndex];
+                const mergedSnapshot = [...(existingBatch.traceabilitySnapshot || [])];
+
+                pouredSnapshot.forEach(nt => {
+                    const existing = mergedSnapshot.find(s => s.farmerId === nt.farmerId);
+                    if (existing) existing.weightKg += nt.weightKg;
+                    else mergedSnapshot.push(nt);
+                });
+
+                updatedBatches[existingBatchIndex] = {
+                    ...existingBatch,
+                    weight: existingBatch.weight + pouredWeight,
+                    traceabilitySnapshot: mergedSnapshot
+                };
+
+                // Handle the parent batch
+                if (isFullPour) {
+                    // Remove the incoming batch entirely as it's been fully absorbed
+                    updatedBatches = updatedBatches.filter(b => b.id !== batchId);
+                } else {
+                    // Reduce the parent batch
+                    updatedBatches = updatedBatches.map(b => {
+                        if (b.id === batchId) {
+                            return {
+                                ...b,
+                                weight: b.weight - pouredWeight,
+                                containerIds: b.containerIds.filter(id => !containerIds.includes(id)),
+                                traceabilitySnapshot: (b.traceabilitySnapshot || []).map(snap => ({
+                                    farmerId: snap.farmerId,
+                                    weightKg: Math.max(0, snap.weightKg * (1 - pouredRatio))
+                                }))
+                            };
+                        }
+                        return b;
+                    });
+                }
+            } else {
+                // No existing active batch on this bed.
+                if (isFullPour) {
+                    // Just update the dryingBedId and clear containerIds
+                    updatedBatches = updatedBatches.map(b =>
+                        b.id === batchId ? { ...b, dryingBedId, containerIds: [] } : b
+                    );
+                } else {
+                    // Create a new batch for the bed
+                    const d = new Date();
+                    const dayOfWeek = d.getDay() === 0 ? 7 : d.getDay();
+                    const weekNum = getWeek(d);
+                    const weekStr = weekNum.toString().padStart(2, '0');
+                    const year = d.getFullYear().toString().slice(-2);
+                    const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+                    const newBatchId = `${dayOfWeek}-wk${weekStr}${year}-${targetBed?.uniqueNumber || 'BED'}-${randomSuffix}`;
+
+                    updatedBatches.push({
+                        ...sourceBatch,
+                        id: newBatchId,
+                        weight: pouredWeight,
+                        containerIds: [],
+                        dryingBedId,
+                        traceabilitySnapshot: pouredSnapshot
+                    });
+
+                    // Reduce the parent batch
+                    updatedBatches = updatedBatches.map(b => {
+                        if (b.id === batchId) {
+                            return {
+                                ...b,
+                                weight: b.weight - pouredWeight,
+                                containerIds: b.containerIds.filter(id => !containerIds.includes(id)),
+                                traceabilitySnapshot: (b.traceabilitySnapshot || []).map(snap => ({
+                                    farmerId: snap.farmerId,
+                                    weightKg: Math.max(0, snap.weightKg * (1 - pouredRatio))
+                                }))
+                            };
+                        }
+                        return b;
+                    });
+                }
+            }
+
             return {
                 ...state,
                 containers: updatedContainers,
@@ -701,6 +799,104 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
                     b.id === batchId ? { ...b, isLocked: !b.isLocked } : b
                 )
             }));
+        }
+        case 'SPLIT_BATCH': {
+            const { projectId, sourceBatchId, splits, stage, endDate, completedBy } = action.payload;
+            const project = state.projects.find(p => p.id === projectId);
+            if (!project) return state;
+
+            const sourceBatch = project.processingBatches.find(b => b.id === sourceBatchId);
+            if (!sourceBatch) return state;
+
+            const parentTotalBatchWeight = sourceBatch.weight;
+
+            // Pipeline Routing
+            const activeStages = project.processingPipeline && project.processingPipeline.length > 0
+                ? project.processingPipeline
+                : (['RECEPTION', 'FLOATING', 'DESICCATION', 'RESTING'] as ProcessingStage[]);
+            const currentIndex = activeStages.indexOf(stage);
+            const nextStage = currentIndex < activeStages.length - 1 && currentIndex !== -1
+                ? activeStages[currentIndex + 1]
+                : stage;
+
+            const newBatches: ProcessingBatch[] = splits.map((split: { grade: string, weight: number }) => {
+                const childTraceability = (sourceBatch.traceabilitySnapshot || []).map(snap => ({
+                    farmerId: snap.farmerId,
+                    weightKg: snap.weightKg * (split.weight / parentTotalBatchWeight)
+                }));
+
+                const childHistory = [...sourceBatch.history];
+                const existingIndex = childHistory.findIndex(h => h.stage === stage && !h.endDate);
+                if (existingIndex !== -1) {
+                    childHistory[existingIndex] = {
+                        ...childHistory[existingIndex],
+                        endDate,
+                        completedBy,
+                        weightOut: split.weight
+                    };
+                } else {
+                    childHistory.push({
+                        stage,
+                        startDate: endDate,
+                        endDate,
+                        completedBy,
+                        weightOut: split.weight
+                    });
+                }
+
+                if (nextStage !== stage) {
+                    childHistory.push({
+                        stage: nextStage,
+                        startDate: endDate
+                    });
+                }
+
+                return {
+                    ...sourceBatch,
+                    id: `${sourceBatch.id}-${split.grade.replace(/\s+/g, '').toUpperCase()}`,
+                    grade: split.grade,
+                    weight: split.weight,
+                    currentStage: nextStage,
+                    status: nextStage === 'EXPORT_READY' ? 'COMPLETED' : 'IN_PROGRESS',
+                    history: childHistory,
+                    traceabilitySnapshot: childTraceability,
+                    // Wipe physical warehouse constraints for the new child batches until put away again
+                    isTransfer: false,
+                    isRemainder: false,
+                    consumedByBatchId: undefined,
+                    containerIds: [],
+                    warehouseLocation: undefined,
+                    storageZone: undefined,
+                    storageRow: undefined,
+                    palletId: undefined,
+                    palletLevel: undefined,
+                } as ProcessingBatch;
+            });
+
+            const updatedBatches = project.processingBatches.map(b => {
+                if (b.id === sourceBatchId) {
+                    const parentHistory = [...b.history];
+                    const pExistingIndex = parentHistory.findIndex(h => h.stage === stage && !h.endDate);
+                    if (pExistingIndex !== -1) {
+                        parentHistory[pExistingIndex] = { ...parentHistory[pExistingIndex], endDate, completedBy };
+                    } else {
+                        parentHistory.push({ stage, startDate: endDate, endDate, completedBy });
+                    }
+
+                    return {
+                        ...b,
+                        status: 'COMPLETED' as const,
+                        consumedByBatchId: 'SPLIT',
+                        history: parentHistory
+                    };
+                }
+                return b;
+            });
+
+            return {
+                ...state,
+                projects: state.projects.map(p => p.id === projectId ? { ...p, processingBatches: [...updatedBatches, ...newBatches] } : p)
+            };
         }
         case 'ADD_SALE': {
             const { projectId, data } = action.payload;
@@ -821,6 +1017,40 @@ export const operationsReducer = (state: ProjectState, action: any): ProjectStat
                 }
                 return container;
             });
+            return { ...state, containers: updatedContainers };
+        }
+        case 'DELETE_PROJECT': {
+            const { projectId } = action.payload;
+            const projectToDelete = state.projects.find(p => p.id === projectId);
+            if (!projectToDelete) return state;
+
+            const deliveryIds = (projectToDelete.deliveries || []).map(d => d.id);
+            const batchIds = (projectToDelete.processingBatches || []).map(b => b.id);
+            const idsToRemove = new Set([...deliveryIds, ...batchIds]);
+
+            const updatedContainers = (state.containers || []).map(container => {
+                const keptContributions = container.contributions.filter(c => !idsToRemove.has(c.deliveryId));
+                if (keptContributions.length !== container.contributions.length) {
+                    const newWeight = keptContributions.reduce((sum, c) => sum + c.weight, 0);
+                    return {
+                        ...container,
+                        contributions: keptContributions,
+                        weight: newWeight,
+                        status: (newWeight > 0 ? 'IN_USE' : 'AVAILABLE') as 'IN_USE' | 'AVAILABLE'
+                    };
+                }
+                return container;
+            });
+
+            return { ...state, containers: updatedContainers };
+        }
+        case 'FORCE_EMPTY_CONTAINERS': {
+            const { containerIds } = action.payload;
+            const updatedContainers = (state.containers || []).map(c =>
+                containerIds.includes(c.id)
+                    ? { ...c, weight: 0, contributions: [], status: 'AVAILABLE' as const }
+                    : c
+            );
             return { ...state, containers: updatedContainers };
         }
         default:

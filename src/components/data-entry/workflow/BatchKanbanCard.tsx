@@ -16,7 +16,10 @@ import {
     Container as ContainerIcon,
     Sparkles,
     Hammer,
-    ArrowRight
+    ArrowRight,
+    Layers,
+    Plus,
+    X
 } from 'lucide-react';
 import { useProjects } from '../../../context/ProjectProvider';
 import { usePermissions } from '../../../hooks/usePermissions';
@@ -47,6 +50,12 @@ const STAGE_LABELS: Record<string, string> = {
     DENSITY: 'Density Sorting',
     COLOR_SORTING: 'Color Sorting',
     EXPORT_READY: 'Export Ready',
+    WASHING: 'Washing',
+    ANAEROBIC_FERMENTATION: 'Anaerobic Fermentation',
+    CARBONIC_MACERATION: 'Carbonic Maceration',
+    THERMAL_SHOCK: 'Thermal Shock',
+    TRIFLEX_MILLING: 'Triflex Milling',
+    ECO_PULPER: 'Eco-Pulper'
 };
 
 // EXTERNALIZED COMPONENT: WMS Directed Put-Away Engine
@@ -183,11 +192,18 @@ export const BatchKanbanCard: React.FC<BatchKanbanCardProps> = ({
 
     // Local Component State to isolate re-renders
     const [inlineBedSelection, setInlineBedSelection] = useState<string>('');
+    const [pourSelectedContainers, setPourSelectedContainers] = useState<string[]>([]);
     const [moistureDate, setMoistureDate] = useState<string>(new Date().toISOString().split('T')[0]);
     const [moistureInput, setMoistureInput] = useState<string>('');
     const [isHarvesting, setIsHarvesting] = useState(false);
     const [harvestWeight, setHarvestWeight] = useState('');
-    const [hullingWeight, setHullingWeight] = useState(''); // NEW: For Hulling Physics
+
+    // Hulling Physics
+    const [hullingWeight, setHullingWeight] = useState('');
+
+    // Triflex Physics
+    const [triflexSplits, setTriflexSplits] = useState<{ grade: string, weight: string }[]>([{ grade: 'Grade 15', weight: '' }]);
+
     const [putAwayForm, setPutAwayForm] = useState<PutAwayFormState>({
         date: new Date().toISOString().split('T')[0],
         main: { facility: '', zone: '', row: '', pallet: '', level: '' },
@@ -207,7 +223,13 @@ export const BatchKanbanCard: React.FC<BatchKanbanCardProps> = ({
     const isDesiccation = activeStage === 'DESICCATION';
     const isBedAssigned = !!batch.dryingBedId;
 
-    const hullingYield = (parseFloat(hullingWeight) / batch.weight) * 100 || 0; // NEW: For Hulling Physics
+    const hullingYield = (parseFloat(hullingWeight) / batch.weight) * 100 || 0;
+
+    const triflexExpected = batch.weight * 0.8;
+    const triflexTotalWeight = triflexSplits.reduce((sum, split) => sum + (parseFloat(split.weight) || 0), 0);
+    const triflexYield = batch.weight > 0 ? (triflexTotalWeight / batch.weight) * 100 : 0;
+    const canAddTriflexSplit = triflexSplits.length < 4;
+    const isValidTriflex = triflexTotalWeight > 0 && triflexSplits.some(s => s.grade.trim() !== '' && parseFloat(s.weight) > 0);
 
     const getAvailableBeds = (weightToAdd: number, excludeBatchId?: string) => {
         return state.dryingBeds.filter(bed => {
@@ -390,6 +412,11 @@ export const BatchKanbanCard: React.FC<BatchKanbanCardProps> = ({
                                                 <Badge className="bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800 font-bold px-2 py-0.5 whitespace-nowrap">
                                                     {liveWeight.toFixed(1)}kg Est. Current
                                                 </Badge>
+                                                {batch.grade && (
+                                                    <Badge variant="outline" className="text-emerald-600 border-emerald-600/30 font-bold">
+                                                        {batch.grade}
+                                                    </Badge>
+                                                )}
                                                 {batch.isOutsourced && (
                                                     <Badge variant="outline" className="text-amber-600 border-amber-600/30">
                                                         Outsourced
@@ -404,6 +431,11 @@ export const BatchKanbanCard: React.FC<BatchKanbanCardProps> = ({
                                             <Badge className="bg-gray-50 dark:bg-gray-900 text-brand-blue border border-brand-blue/30 font-bold px-2 py-0.5 whitespace-nowrap">
                                                 {batch.weight.toFixed(1)}kg
                                             </Badge>
+                                            {batch.grade && (
+                                                <Badge variant="outline" className="text-emerald-600 border-emerald-600/30 font-bold">
+                                                    {batch.grade}
+                                                </Badge>
+                                            )}
                                             {batch.isOutsourced && (
                                                 <Badge variant="outline" className="text-amber-600 border-amber-600/30">
                                                     Outsourced
@@ -492,18 +524,65 @@ export const BatchKanbanCard: React.FC<BatchKanbanCardProps> = ({
                                 );
                             })()}
 
+                            {/* Partial Pour / Smart Pour for Containers Waiting for Bed */}
                             {isDesiccation && !isBedAssigned && (() => {
                                 const availableBedsForPour = getAvailableBeds(batch.weight, batch.id);
+                                const batchContainers = (state.containers || []).filter(c => batch.containerIds.includes(c.id));
+
+                                const handleSmartPourAutoFill = () => {
+                                    if (!inlineBedSelection) return;
+                                    const targetBed = state.dryingBeds.find(b => b.id === inlineBedSelection);
+                                    if (!targetBed) return;
+
+                                    const activeBatches = project.processingBatches.filter(b => b.currentStage === 'DESICCATION' && b.dryingBedId === inlineBedSelection && b.status !== 'COMPLETED' && b.id !== batch.id);
+                                    const currentLoad = activeBatches.reduce((sum, b) => sum + b.weight, 0);
+                                    const availableCapacity = targetBed.capacityKg - currentLoad;
+
+                                    let currentWeight = 0;
+                                    const selectedIds: string[] = [];
+
+                                    for (const c of batchContainers) {
+                                        if (currentWeight + c.weight <= availableCapacity + 10) {
+                                            selectedIds.push(c.id);
+                                            currentWeight += c.weight;
+                                        } else {
+                                            break;
+                                        }
+                                    }
+                                    setPourSelectedContainers(selectedIds);
+                                };
+
                                 return (
-                                    <div className="bg-yellow-50 dark:bg-yellow-900/10 p-4 rounded-xl border border-yellow-200 dark:border-yellow-800 flex flex-col md:flex-row items-center gap-4 mt-4 w-full">
-                                        <div className="flex-1">
-                                            <h4 className="font-bold text-yellow-800 dark:text-yellow-400 flex items-center gap-2"><Sun className="w-4 h-4" /> Crates Waiting for Bed</h4>
-                                            <p className="text-xs text-yellow-700 dark:text-yellow-500 mt-1">This batch has left the wet mill. Assign it to a drying bed to free up these crates.</p>
+                                    <div className="bg-yellow-50 dark:bg-yellow-900/10 p-4 rounded-xl border border-yellow-200 dark:border-yellow-800 flex flex-col gap-4 mt-4 w-full">
+                                        <div>
+                                            <h4 className="font-bold text-yellow-800 dark:text-yellow-400 flex items-center gap-2"><Sun className="w-4 h-4" /> Containers Waiting for Bed</h4>
+                                            <p className="text-xs text-yellow-700 dark:text-yellow-500 mt-1">This batch has left the wet mill. Assign its containers to a drying bed.</p>
                                         </div>
 
-                                        <div className="flex flex-col gap-2 w-full md:w-auto items-end">
+                                        {/* Mini Grid of Containers */}
+                                        <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                                            {batchContainers.map(c => {
+                                                const isSelected = pourSelectedContainers.includes(c.id);
+                                                return (
+                                                    <div
+                                                        key={c.id}
+                                                        onClick={() => {
+                                                            setPourSelectedContainers(prev =>
+                                                                prev.includes(c.id) ? prev.filter(id => id !== c.id) : [...prev, c.id]
+                                                            )
+                                                        }}
+                                                        className={`cursor-pointer px-2 py-1 border rounded text-xs font-mono flex items-center gap-2 transition-colors ${isSelected ? 'bg-yellow-500 text-white border-yellow-600' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:border-yellow-400'}`}
+                                                    >
+                                                        {isSelected && <CheckCircle2 className="w-3 h-3" />}
+                                                        {c.label} ({c.weight.toFixed(1)}kg)
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+
+                                        <div className="flex flex-col gap-2 w-full items-end mt-2">
                                             <div className="flex items-center gap-2 w-full md:w-auto">
-                                                <Select value={inlineBedSelection} onValueChange={setInlineBedSelection}>
+                                                <Select value={inlineBedSelection} onValueChange={(val) => { setInlineBedSelection(val); setPourSelectedContainers([]); }}>
                                                     <SelectTrigger className="w-full sm:w-48 bg-white dark:bg-gray-800 h-10">
                                                         <SelectValue placeholder="Select Target Bed..." />
                                                     </SelectTrigger>
@@ -512,13 +591,22 @@ export const BatchKanbanCard: React.FC<BatchKanbanCardProps> = ({
                                                     </SelectContent>
                                                 </Select>
                                                 <Button
+                                                    variant="outline"
                                                     disabled={!inlineBedSelection}
+                                                    onClick={handleSmartPourAutoFill}
+                                                    className="border-yellow-500 text-yellow-600 hover:bg-yellow-100 dark:hover:bg-yellow-900/30 font-bold"
+                                                >
+                                                    <Sparkles className="w-4 h-4 mr-2" /> Auto-Fill
+                                                </Button>
+                                                <Button
+                                                    disabled={!inlineBedSelection || pourSelectedContainers.length === 0}
                                                     onClick={() => {
-                                                        dispatch({ type: 'POUR_BATCH_TO_BED', payload: { projectId: project.id, batchId: batch.id, dryingBedId: inlineBedSelection } });
+                                                        dispatch({ type: 'POUR_BATCH_TO_BED', payload: { projectId: project.id, batchId: batch.id, dryingBedId: inlineBedSelection, containerIds: pourSelectedContainers } });
+                                                        setPourSelectedContainers([]);
                                                     }}
                                                     className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold"
                                                 >
-                                                    Pour onto Bed
+                                                    Pour onto Bed ({pourSelectedContainers.length})
                                                 </Button>
                                             </div>
                                         </div>
@@ -550,6 +638,77 @@ export const BatchKanbanCard: React.FC<BatchKanbanCardProps> = ({
                                                 Yield: {hullingYield.toFixed(1)}%
                                             </span>
                                         </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* TRIFLEX MILLING SPLIT BLOCK */}
+                            {activeStage === 'TRIFLEX_MILLING' && (
+                                <div className="w-full mt-4 bg-purple-50 dark:bg-purple-900/10 p-4 rounded-xl border border-purple-200 dark:border-purple-800 flex flex-col gap-4">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <h4 className="font-bold text-purple-800 dark:text-purple-400 flex items-center gap-2"><Layers className="w-4 h-4" /> Triflex Milling & Grading</h4>
+                                            <p className="text-xs text-purple-700 dark:text-purple-500 mt-1">Split batch into up to 4 grades. Expected out: {triflexExpected.toFixed(1)}kg.</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <span className="text-sm font-bold text-purple-600 dark:text-purple-400">Total Yield: {triflexYield.toFixed(1)}%</span>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-3">
+                                        {triflexSplits.map((split, idx) => (
+                                            <div key={idx} className="flex items-center gap-3">
+                                                <div className="flex-1">
+                                                    <Input
+                                                        type="text"
+                                                        placeholder="Grade Name (e.g. Grade 15)"
+                                                        value={split.grade}
+                                                        onChange={e => {
+                                                            const newSplits = [...triflexSplits];
+                                                            newSplits[idx].grade = e.target.value;
+                                                            setTriflexSplits(newSplits);
+                                                        }}
+                                                        className="bg-white dark:bg-gray-900"
+                                                    />
+                                                </div>
+                                                <div className="flex-1">
+                                                    <Input
+                                                        type="number"
+                                                        step="0.1"
+                                                        placeholder="Weight (kg)"
+                                                        value={split.weight}
+                                                        onChange={e => {
+                                                            const newSplits = [...triflexSplits];
+                                                            newSplits[idx].weight = e.target.value;
+                                                            setTriflexSplits(newSplits);
+                                                        }}
+                                                        className="bg-white dark:bg-gray-900 font-bold [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                    />
+                                                </div>
+                                                {triflexSplits.length > 1 && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        onClick={() => {
+                                                            const newSplits = triflexSplits.filter((_, i) => i !== idx);
+                                                            setTriflexSplits(newSplits);
+                                                        }}
+                                                        className="text-gray-400 hover:text-red-500"
+                                                    >
+                                                        <X className="w-4 h-4" />
+                                                    </Button>
+                                                )}
+                                            </div>
+                                        ))}
+                                        {canAddTriflexSplit && (
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => setTriflexSplits([...triflexSplits, { grade: '', weight: '' }])}
+                                                className="text-purple-600 border-purple-200 hover:bg-purple-100 dark:border-purple-800 dark:text-purple-400 dark:hover:bg-purple-900/30"
+                                            >
+                                                <Plus className="w-4 h-4 mr-2" /> Add Grade Split
+                                            </Button>
+                                        )}
                                     </div>
                                 </div>
                             )}
@@ -635,7 +794,7 @@ export const BatchKanbanCard: React.FC<BatchKanbanCardProps> = ({
                                         <Button
                                             variant="secondary"
                                             size="sm"
-                                            disabled={isPending || (requiresBedSelection && !inlineBedSelection) || (activeStage === 'HULLING' && !hullingWeight)}
+                                            disabled={isPending || (requiresBedSelection && !inlineBedSelection) || (activeStage === 'HULLING' && !hullingWeight) || (activeStage === 'TRIFLEX_MILLING' && !isValidTriflex)}
                                             className="bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 text-brand-dark dark:text-white font-bold border border-gray-200 dark:border-gray-700 rounded-xl h-10 px-4"
                                             onClick={() => {
                                                 if (activeStage === 'HULLING') {
@@ -650,12 +809,28 @@ export const BatchKanbanCard: React.FC<BatchKanbanCardProps> = ({
                                                             completedBy: 'System User'
                                                         }
                                                     });
+                                                } else if (activeStage === 'TRIFLEX_MILLING') {
+                                                    const validSplits = triflexSplits
+                                                        .filter(s => s.grade.trim() !== '' && parseFloat(s.weight) > 0)
+                                                        .map(s => ({ grade: s.grade.trim(), weight: parseFloat(s.weight) }));
+
+                                                    dispatch({
+                                                        type: 'SPLIT_BATCH',
+                                                        payload: {
+                                                            projectId: project.id,
+                                                            sourceBatchId: batch.id,
+                                                            splits: validSplits,
+                                                            stage: 'TRIFLEX_MILLING',
+                                                            endDate: new Date().toISOString().split('T')[0],
+                                                            completedBy: 'System User'
+                                                        }
+                                                    });
                                                 } else {
                                                     onMoveToNextStage(batch.id, inlineBedSelection);
                                                 }
                                             }}
                                         >
-                                            {activeStage === 'RESTING' ? 'End Resting' : `Move to ${nextStage ? STAGE_LABELS[nextStage] : 'Next'}`}
+                                            {activeStage === 'RESTING' ? 'End Resting' : activeStage === 'TRIFLEX_MILLING' ? 'Process & Split Batch' : `Move to ${nextStage ? STAGE_LABELS[nextStage] : 'Next'}`}
                                             <ArrowRight className="w-4 h-4 ml-2 text-brand-blue" />
                                         </Button>
                                     )}
@@ -851,7 +1026,7 @@ export const BatchKanbanCard: React.FC<BatchKanbanCardProps> = ({
                     {/* Visual Physical Crates inside the Pipeline (Pre-Bed) */}
                     {batch.containerIds && batch.containerIds.length > 0 && !batch.dryingBedId && activeStage !== 'FLOATING' && (
                         <div className="mt-4 border-t border-gray-100 dark:border-gray-700/50 pt-4">
-                            <h5 className="text-[10px] font-bold text-gray-500 uppercase mb-2 tracking-widest">Physical Crates Attached</h5>
+                            <h5 className="text-[10px] font-bold text-gray-500 uppercase mb-2 tracking-widest">Physical Containers Attached</h5>
                             <div className="flex overflow-x-auto gap-3 pb-2 custom-scrollbar">
                                 {batch.containerIds.map(cid => {
                                     const c = state.containers.find(x => x.id === cid);

@@ -1,6 +1,57 @@
 // ==> src/utils/migrations.ts <==
 import { defaultClientDetails } from "../reducers/projectReducer";
-import type { ProjectState, Project, ClientDetails, Financier, DryingBed, StorageLocation, Farmer } from "../types";
+import type { ProjectState, Project, ClientDetails, Financier, DryingBed, StorageLocation, Farmer, ProcessingMethod } from "../types";
+
+const defaultProcessingMethods: ProcessingMethod[] = [
+    {
+        id: 'method-washed',
+        name: 'Washed (Wet) Process',
+        description: 'Traditional wet process involving pulping and washing.',
+        flavorProfile: 'Clean, bright taste with higher acidity and clear, origin-specific notes.',
+        pipeline: ['RECEPTION', 'FLOATING', 'PULPING', 'FERMENTATION', 'WASHING', 'DESICCATION', 'RESTING', 'HULLING', 'GRADING', 'EXPORT_READY'],
+        isSystem: true
+    },
+    {
+        id: 'method-natural',
+        name: 'Natural (Dry) Process',
+        description: 'Traditional dry process where cherries are dried whole.',
+        flavorProfile: 'Fuller body with intense sweetness and funky, fruit-forward notes like blueberry.',
+        pipeline: ['RECEPTION', 'FLOATING', 'DESICCATION', 'RESTING', 'HULLING', 'GRADING', 'EXPORT_READY'],
+        isSystem: true
+    },
+    {
+        id: 'method-honey',
+        name: 'Honey (Pulped Natural) Process',
+        description: 'Cherries are pulped but dried with mucilage still attached.',
+        flavorProfile: 'Balances the clarity of washed coffee with the sweetness and body of natural.',
+        pipeline: ['RECEPTION', 'FLOATING', 'PULPING', 'DESICCATION', 'RESTING', 'HULLING', 'GRADING', 'EXPORT_READY'],
+        isSystem: true
+    },
+    {
+        id: 'method-anaerobic',
+        name: 'Anaerobic Fermentation',
+        description: 'Fermented in sealed, oxygen-free tanks.',
+        flavorProfile: 'Unique complex acids and esters from oxygen-free stainless steel tanks.',
+        pipeline: ['RECEPTION', 'FLOATING', 'ANAEROBIC_FERMENTATION', 'DESICCATION', 'RESTING', 'HULLING', 'GRADING', 'EXPORT_READY'],
+        isSystem: true
+    },
+    {
+        id: 'method-carbonic',
+        name: 'Carbonic Maceration',
+        description: 'Fermented in a carbon dioxide-rich environment.',
+        flavorProfile: 'Wildly unique notes such as red wine, banana, or bubblegum.',
+        pipeline: ['RECEPTION', 'FLOATING', 'CARBONIC_MACERATION', 'DESICCATION', 'RESTING', 'HULLING', 'GRADING', 'EXPORT_READY'],
+        isSystem: true
+    },
+    {
+        id: 'method-thermal',
+        name: 'Thermal Shock',
+        description: 'Exposed to dramatic temperature changes to lock in flavor.',
+        flavorProfile: 'Specific aromas and flavors locked in via dramatic temperature changes.',
+        pipeline: ['RECEPTION', 'FLOATING', 'THERMAL_SHOCK', 'DESICCATION', 'RESTING', 'HULLING', 'GRADING', 'EXPORT_READY'],
+        isSystem: true
+    }
+];
 
 export const migrateLegacyState = (parsedState: any): ProjectState => {
     // 0. Extract Farmers from projects if not already global
@@ -124,6 +175,7 @@ export const migrateLegacyState = (parsedState: any): ProjectState => {
         paymentLines: parsedState.paymentLines || [],
         containers: parsedState.containers || [],
         globalCurrency: parsedState.globalCurrency || 'USD',
+        processingMethods: parsedState.processingMethods?.length ? parsedState.processingMethods : defaultProcessingMethods,
     };
 };
 
@@ -133,8 +185,9 @@ export const processImportedData = (
     importedFinanciers: any[],
     importedDryingBeds: any[],
     importedStorageLocations: any[],
-    importedFarmers?: any[]
-): { projects: Project[], clients: ClientDetails[], financiers: Financier[], dryingBeds: DryingBed[], storageLocations: StorageLocation[], farmers: Farmer[] } => {
+    importedFarmers?: any[],
+    importedProcessingMethods?: any[]
+): { projects: Project[], clients: ClientDetails[], financiers: Financier[], dryingBeds: DryingBed[], storageLocations: StorageLocation[], farmers: Farmer[], processingMethods: ProcessingMethod[] } => {
 
     // Reuse migration logic for projects to ensure consistency
     const tempState = {
@@ -143,7 +196,8 @@ export const processImportedData = (
         financiers: importedFinanciers,
         dryingBeds: importedDryingBeds,
         storageLocations: importedStorageLocations,
-        farmers: importedFarmers
+        farmers: importedFarmers,
+        processingMethods: importedProcessingMethods
     };
 
     const migratedState = migrateLegacyState(tempState);
@@ -154,6 +208,7 @@ export const processImportedData = (
         financiers: migratedState.financiers,
         dryingBeds: migratedState.dryingBeds,
         storageLocations: migratedState.storageLocations,
-        farmers: migratedState.farmers
+        farmers: migratedState.farmers,
+        processingMethods: migratedState.processingMethods
     };
 };

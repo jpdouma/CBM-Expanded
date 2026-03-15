@@ -1,4 +1,3 @@
-// ==> src/types.ts <==
 export type Currency = 'USD' | 'UGX' | 'EUR';
 
 export type Permission =
@@ -167,7 +166,26 @@ export interface FloatingTank {
     capacityKg: number;
 }
 
-export type ProcessingStage = 'RECEPTION' | 'FLOATING' | 'PULPING' | 'FERMENTATION' | 'DESICCATION' | 'RESTING' | 'DE_STONING' | 'HULLING' | 'POLISHING' | 'GRADING' | 'DENSITY' | 'COLOR_SORTING' | 'EXPORT_READY';
+export type ProcessingStage =
+    | 'RECEPTION'
+    | 'FLOATING'
+    | 'PULPING'
+    | 'FERMENTATION'
+    | 'DESICCATION'
+    | 'RESTING'
+    | 'DE_STONING'
+    | 'HULLING'
+    | 'POLISHING'
+    | 'GRADING'
+    | 'DENSITY'
+    | 'COLOR_SORTING'
+    | 'EXPORT_READY'
+    | 'WASHING'
+    | 'ANAEROBIC_FERMENTATION'
+    | 'CARBONIC_MACERATION'
+    | 'THERMAL_SHOCK'
+    | 'TRIFLEX_MILLING'
+    | 'ECO_PULPER';
 
 export type BatchStatus = 'IN_PROGRESS' | 'PENDING_APPROVAL' | 'COMPLETED';
 
@@ -223,6 +241,18 @@ export interface ProcessingBatch {
 
     isOutsourced?: boolean;
     pendingApproval?: boolean;
+
+    // Triflex / Grading
+    grade?: string;
+}
+
+export interface ProcessingMethod {
+    id: string;
+    name: string;
+    description: string;
+    flavorProfile: string;
+    pipeline: ProcessingStage[];
+    isSystem: boolean;
 }
 
 export interface GlobalSettings {
@@ -451,6 +481,7 @@ export interface ProjectState {
     roles: Role[]; // RBAC Roles
     forecastSnapshots?: ForecastSnapshot[]; // Kept for legacy compatibility
     // NEW GLOBAL STATE
+    processingMethods: ProcessingMethod[];
     globalSettings: GlobalSettings;
     buyingPrices: BuyingPrices[];
     paymentLines: PaymentLine[];
@@ -483,7 +514,7 @@ type AddProjectAction = { type: 'ADD_PROJECT'; payload: { name: string; tier: Pr
 type DeleteProjectAction = { type: 'DELETE_PROJECT'; payload: { projectId: string } };
 type UpdateProjectAction = { type: 'UPDATE_PROJECT'; payload: { projectId: string; updates: Partial<Project> } };
 type SetSelectedProjectIdsAction = { type: 'SET_SELECTED_PROJECT_IDS'; payload: { ids: string[] } };
-type ImportProjectsAction = { type: 'IMPORT_PROJECTS'; payload: { projects: Project[], clients?: ClientDetails[], financiers?: Financier[], dryingBeds?: DryingBed[], storageLocations?: StorageLocation[], farmers?: Farmer[] } };
+type ImportProjectsAction = { type: 'IMPORT_PROJECTS'; payload: { projects: Project[], clients?: ClientDetails[], financiers?: Financier[], dryingBeds?: DryingBed[], storageLocations?: StorageLocation[], farmers?: Farmer[], processingMethods?: ProcessingMethod[] } };
 type LoadStateAction = { type: 'LOAD_STATE'; payload: ProjectState };
 type UpdateChecklistItemAction = { type: 'UPDATE_CHECKLIST_ITEM'; payload: { projectId: string; key: keyof PreProjectChecklist; value: boolean } };
 type AddProjectSetupCostAction = { type: 'ADD_PROJECT_SETUP_COST'; payload: { projectId: string; cost: Omit<ProjectSetupCost, 'id' | 'amountUSD'> } };
@@ -508,6 +539,7 @@ type DeleteStorageLocationAction = { type: 'DELETE_STORAGE_LOCATION', payload: {
 
 type GenerateContainersAction = { type: 'GENERATE_CONTAINERS'; payload: { count: number; date: string; tareWeightKg: number } };
 type DeleteContainerAction = { type: 'DELETE_CONTAINER'; payload: { containerId: string } };
+type ForceEmptyContainersAction = { type: 'FORCE_EMPTY_CONTAINERS'; payload: { containerIds: string[] } };
 
 // Farmer Management Actions
 type AddFarmerAction = { type: 'ADD_FARMER'; payload: { farmerData: Omit<Farmer, 'id'>; id?: string } };
@@ -526,6 +558,11 @@ type AddRoleAction = { type: 'ADD_ROLE'; payload: { roleData: Omit<Role, 'id'> }
 type UpdateRoleAction = { type: 'UPDATE_ROLE'; payload: { roleId: string; updates: Partial<Role> } };
 type DeleteRoleAction = { type: 'DELETE_ROLE'; payload: { roleId: string } };
 type CloneRoleAction = { type: 'CLONE_ROLE'; payload: { roleId: string; newName: string } };
+
+// Processing Method Actions
+type AddProcessingMethodAction = { type: 'ADD_PROCESSING_METHOD'; payload: { methodData: Omit<ProcessingMethod, 'id' | 'isSystem'>; id?: string } };
+type UpdateProcessingMethodAction = { type: 'UPDATE_PROCESSING_METHOD'; payload: { methodId: string, updates: Partial<Omit<ProcessingMethod, 'id' | 'isSystem'>> } };
+type DeleteProcessingMethodAction = { type: 'DELETE_PROCESSING_METHOD'; payload: { methodId: string } };
 
 type AddAdvanceAction = { type: 'ADD_ADVANCE'; payload: { projectId: string; data: Omit<Advance, 'id' | 'amountUSD'> } };
 type AddBulkAdvancesAction = { type: 'ADD_BULK_ADVANCES'; payload: { projectId: string; advancesData: any[] } };
@@ -588,6 +625,18 @@ type PutAwayBatchAction = {
     }
 };
 
+type SplitBatchAction = {
+    type: 'SPLIT_BATCH';
+    payload: {
+        projectId: string;
+        sourceBatchId: string;
+        splits: { grade: string; weight: number; }[];
+        stage: ProcessingStage;
+        endDate: string;
+        completedBy: string;
+    }
+};
+
 // NEW PRICING & PAYMENT ACTIONS
 type PublishBuyingPricesAction = { type: 'PUBLISH_BUYING_PRICES'; payload: { data: Omit<BuyingPrices, 'id'>; id?: string } };
 type AddPaymentLineAction = { type: 'ADD_PAYMENT_LINE'; payload: { data: Omit<PaymentLine, 'id'> } };
@@ -636,7 +685,7 @@ type HarvestDryingBedAction = {
 
 type PourBatchToBedAction = {
     type: 'POUR_BATCH_TO_BED';
-    payload: { projectId: string; batchId: string; dryingBedId: string; }
+    payload: { projectId: string; batchId: string; dryingBedId: string; containerIds: string[]; }
 };
 
 type WipeProjectDataAction = {
@@ -688,8 +737,12 @@ export type ProjectAction =
     | UpdateRoleAction
     | DeleteRoleAction
     | CloneRoleAction
+    | AddProcessingMethodAction
+    | UpdateProcessingMethodAction
+    | DeleteProcessingMethodAction
     | GenerateContainersAction
     | DeleteContainerAction
+    | ForceEmptyContainersAction
     | AddAdvanceAction
     | AddBulkAdvancesAction
     | AddDeliveryAction
@@ -731,4 +784,5 @@ export type ProjectAction =
     | PourBatchToBedAction
     | PutAwayBatchAction
     | ToggleBatchLockAction
+    | SplitBatchAction
     | WipeProjectDataAction;

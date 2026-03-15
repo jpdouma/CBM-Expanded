@@ -38,6 +38,56 @@ const initialState: ProjectState = {
             ]
         }
     ],
+    processingMethods: [
+        {
+            id: 'method-washed',
+            name: 'Washed (Wet) Process',
+            description: 'Traditional wet process involving pulping and washing.',
+            flavorProfile: 'Clean, bright taste with higher acidity and clear, origin-specific notes.',
+            pipeline: ['RECEPTION', 'FLOATING', 'PULPING', 'FERMENTATION', 'WASHING', 'DESICCATION', 'RESTING', 'HULLING', 'GRADING', 'EXPORT_READY'],
+            isSystem: true
+        },
+        {
+            id: 'method-natural',
+            name: 'Natural (Dry) Process',
+            description: 'Traditional dry process where cherries are dried whole.',
+            flavorProfile: 'Fuller body with intense sweetness and funky, fruit-forward notes like blueberry.',
+            pipeline: ['RECEPTION', 'FLOATING', 'DESICCATION', 'RESTING', 'HULLING', 'GRADING', 'EXPORT_READY'],
+            isSystem: true
+        },
+        {
+            id: 'method-honey',
+            name: 'Honey (Pulped Natural) Process',
+            description: 'Cherries are pulped but dried with mucilage still attached.',
+            flavorProfile: 'Balances the clarity of washed coffee with the sweetness and body of natural.',
+            pipeline: ['RECEPTION', 'FLOATING', 'PULPING', 'DESICCATION', 'RESTING', 'HULLING', 'GRADING', 'EXPORT_READY'],
+            isSystem: true
+        },
+        {
+            id: 'method-anaerobic',
+            name: 'Anaerobic Fermentation',
+            description: 'Fermented in sealed, oxygen-free tanks.',
+            flavorProfile: 'Unique complex acids and esters from oxygen-free stainless steel tanks.',
+            pipeline: ['RECEPTION', 'FLOATING', 'ANAEROBIC_FERMENTATION', 'DESICCATION', 'RESTING', 'HULLING', 'GRADING', 'EXPORT_READY'],
+            isSystem: true
+        },
+        {
+            id: 'method-carbonic',
+            name: 'Carbonic Maceration',
+            description: 'Fermented in a carbon dioxide-rich environment.',
+            flavorProfile: 'Wildly unique notes such as red wine, banana, or bubblegum.',
+            pipeline: ['RECEPTION', 'FLOATING', 'CARBONIC_MACERATION', 'DESICCATION', 'RESTING', 'HULLING', 'GRADING', 'EXPORT_READY'],
+            isSystem: true
+        },
+        {
+            id: 'method-thermal',
+            name: 'Thermal Shock',
+            description: 'Exposed to dramatic temperature changes to lock in flavor.',
+            flavorProfile: 'Specific aromas and flavors locked in via dramatic temperature changes.',
+            pipeline: ['RECEPTION', 'FLOATING', 'THERMAL_SHOCK', 'DESICCATION', 'RESTING', 'HULLING', 'GRADING', 'EXPORT_READY'],
+            isSystem: true
+        }
+    ],
     globalSettings: { processingCosts: [] },
     buyingPrices: [],
     paymentLines: [],
@@ -104,7 +154,8 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
                         containers: initialState.containers,
                         buyingPrices: initialState.buyingPrices,
                         paymentLines: initialState.paymentLines,
-                        globalSettings: initialState.globalSettings
+                        globalSettings: initialState.globalSettings,
+                        processingMethods: initialState.processingMethods
                     });
                 }
             },
@@ -173,7 +224,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
             }
 
             // Diff 2: Master Data Document
-            const masterKeys = ['farmers', 'clients', 'financiers', 'dryingBeds', 'storageLocations', 'containers', 'buyingPrices', 'paymentLines', 'globalSettings'] as const;
+            const masterKeys = ['farmers', 'clients', 'financiers', 'dryingBeds', 'storageLocations', 'containers', 'buyingPrices', 'paymentLines', 'globalSettings', 'processingMethods'] as const;
             const masterDataChanged = masterKeys.some(key => nextState[key] !== stateRef.current[key]);
 
             if (masterDataChanged) {

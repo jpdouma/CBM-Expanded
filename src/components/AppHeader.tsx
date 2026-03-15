@@ -9,7 +9,7 @@ import { useTheme } from '../context/ThemeProvider';
 import { useProjects } from '../context/ProjectProvider';
 
 interface AppHeaderProps {
-    activeSetting: 'hub' | 'dryingBeds' | 'floatingTanks' | 'clients' | 'financiers' | 'storageLocations' | 'farmers' | 'users' | 'roles' | 'costing' | 'pricing' | 'containers' | null;
+    activeSetting: 'hub' | 'dryingBeds' | 'floatingTanks' | 'clients' | 'financiers' | 'storageLocations' | 'farmers' | 'users' | 'roles' | 'costing' | 'pricing' | 'containers' | 'processingMethods' | null;
     onSettingsClick: () => void;
     onActivityLogClick: () => void;
     onImport: () => void;

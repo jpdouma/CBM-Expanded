@@ -1,6 +1,6 @@
 // ==> src/components/data-entry/workflow/FloatingScalePanel.tsx <==
 import React, { useState } from 'react';
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, AlertCircle } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Label } from '../../ui/label';
 import { Input } from '../../ui/input';
@@ -27,16 +27,20 @@ export const FloatingScalePanel: React.FC<FloatingScalePanelProps> = ({
     const { dispatch } = useProjects();
     const [scaleActiveContainerId, setScaleActiveContainerId] = useState<string | null>(null);
     const [scaleGrossWeight, setScaleGrossWeight] = useState<string>('');
+    const [isSaving, setIsSaving] = useState(false);
 
     const sinkerIds = batch.sinkerContainerIds || [];
     const floaterIds = batch.floaterContainerIds || [];
 
-    const floatingAvailableCrates = containers
+    const unweighedCount = batch.containerIds.filter(id => !sinkerIds.includes(id) && !floaterIds.includes(id)).length;
+    const estRemainingKg = unweighedCount * 48;
+
+    const floatingAvailableContainers = containers
         .filter(c => c.status === 'AVAILABLE' || batch.containerIds.includes(c.id) || sinkerIds.includes(c.id) || floaterIds.includes(c.id))
         .sort((a, b) => {
             const aIsBasin = batch.containerIds.includes(a.id) ? 1 : 0;
             const bIsBasin = batch.containerIds.includes(b.id) ? 1 : 0;
-            if (aIsBasin !== bIsBasin) return bIsBasin - aIsBasin; // Emptied basin crates first
+            if (aIsBasin !== bIsBasin) return bIsBasin - aIsBasin; // Emptied basin containers first
             return b.weight - a.weight;
         });
 
@@ -83,6 +87,11 @@ export const FloatingScalePanel: React.FC<FloatingScalePanelProps> = ({
 
         setScaleActiveContainerId(null);
         setScaleGrossWeight('');
+    };
+
+    const handleSaveProgress = () => {
+        setIsSaving(true);
+        setTimeout(() => setIsSaving(false), 2000);
     };
 
     const handleComplete = () => {
@@ -162,13 +171,28 @@ export const FloatingScalePanel: React.FC<FloatingScalePanelProps> = ({
                     </div>
                 </div>
 
-                <Button
-                    onClick={handleComplete}
-                    disabled={sinkerIds.length === 0}
-                    className="w-full mt-auto bg-cyan-600 hover:bg-cyan-700 text-white font-bold h-12 shadow-md disabled:opacity-50 transition-all"
-                >
-                    Complete Floating Stage
-                </Button>
+                {unweighedCount > 0 && (
+                    <div className="text-amber-500 text-xs font-bold mt-2 flex items-center justify-center gap-1">
+                        <AlertCircle className="w-4 h-4" /> ⚠️ ~{estRemainingKg} kg remaining to be weighed.
+                    </div>
+                )}
+
+                <div className="flex gap-2 mt-auto">
+                    <Button
+                        variant="outline"
+                        onClick={handleSaveProgress}
+                        className={`w-1/3 font-bold h-12 transition-all ${isSaving ? 'border-green-500 text-green-500 bg-green-50 dark:bg-green-900/20' : 'border-cyan-600 text-cyan-600 hover:bg-cyan-50 dark:border-cyan-400 dark:text-cyan-400'}`}
+                    >
+                        {isSaving ? 'Saved!' : '💾 Save'}
+                    </Button>
+                    <Button
+                        onClick={handleComplete}
+                        disabled={sinkerIds.length === 0 || unweighedCount > 0}
+                        className="w-2/3 bg-cyan-600 hover:bg-cyan-700 text-white font-bold h-12 shadow-md disabled:opacity-50 transition-all"
+                    >
+                        Complete Stage
+                    </Button>
+                </div>
             </div>
 
             {/* RIGHT PANE: Weighing Queue */}
@@ -176,7 +200,7 @@ export const FloatingScalePanel: React.FC<FloatingScalePanelProps> = ({
                 <div>
                     <h4 className="text-sm font-bold text-brand-dark dark:text-white mb-2">2. Weighing Queue</h4>
                     <div className="grid grid-cols-2 gap-3 overflow-y-auto max-h-[500px] pr-2 custom-scrollbar">
-                        {floatingAvailableCrates.map(c => {
+                        {floatingAvailableContainers.map(c => {
                             const isSinker = sinkerIds.includes(c.id);
                             const isFloater = floaterIds.includes(c.id);
                             const isUsed = isSinker || isFloater;

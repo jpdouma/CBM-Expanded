@@ -1,5 +1,5 @@
 // ==> src/reducers/projectManagementReducer.ts <==
-import type { ProjectState, ProjectAction, Project } from '../types';
+import type { ProjectState, ProjectAction, Project, ProcessingStage } from '../types';
 import { createNewProject, getRecalculatedDryingBeds } from '../utils/projectHelpers';
 import { processImportedData } from '../utils/migrations';
 
@@ -44,7 +44,17 @@ export const projectManagementReducer = (state: ProjectState, action: any): Proj
             };
         }
         case 'ADD_PROJECT': {
-            const newProject = createNewProject(action.payload.name, action.payload.tier);
+            let determinedPipeline: ProcessingStage[] = ['RECEPTION', 'FLOATING', 'DESICCATION', 'RESTING'];
+
+            if (state.processingMethods) {
+                const targetMethodId = action.payload.tier === 'HIGH_COMMERCIAL' ? 'method-washed' : 'method-natural';
+                const method = state.processingMethods.find(m => m.id === targetMethodId);
+                if (method && method.pipeline && method.pipeline.length > 0) {
+                    determinedPipeline = method.pipeline;
+                }
+            }
+
+            const newProject = createNewProject(action.payload.name, action.payload.tier, determinedPipeline);
             if (action.payload.id) newProject.id = action.payload.id;
             return {
                 ...state,

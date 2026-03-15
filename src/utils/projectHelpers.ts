@@ -1,5 +1,5 @@
 // ==> src/utils/projectHelpers.ts <==
-import type { Project, ClientDetails, DryingBed } from '../types';
+import type { Project, ClientDetails, DryingBed, ProcessingStage } from '../types';
 
 export const defaultClientDetails: Omit<ClientDetails, 'id'> = {
     status: "New",
@@ -63,7 +63,7 @@ export const defaultClientDetails: Omit<ClientDetails, 'id'> = {
     signature: ""
 };
 
-export const createNewProject = (name: string, tier: 'HIGH_COMMERCIAL' | 'TARGET_SPECIALTY' | 'MICRO_LOTS' = 'HIGH_COMMERCIAL'): Project => ({
+export const createNewProject = (name: string, tier: 'HIGH_COMMERCIAL' | 'TARGET_SPECIALTY' | 'MICRO_LOTS' = 'HIGH_COMMERCIAL', pipeline: ProcessingStage[] = ['RECEPTION', 'FLOATING', 'DESICCATION', 'RESTING']): Project => ({
     id: crypto.randomUUID(),
     name,
     tier,
@@ -90,7 +90,7 @@ export const createNewProject = (name: string, tier: 'HIGH_COMMERCIAL' | 'TARGET
     deliveries: [],
 
     // Unified State Machine Arrays
-    processingPipeline: ['RECEPTION', 'FLOATING', 'DESICCATION', 'RESTING'],
+    processingPipeline: pipeline,
     processingBatches: [],
 
     sales: [],

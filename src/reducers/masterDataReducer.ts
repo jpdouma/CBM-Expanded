@@ -226,7 +226,6 @@ export const masterDataReducer = (state: ProjectState, action: any): ProjectStat
                 name: newName,
                 isSystem: false
             };
-
             return { ...state, roles: [...(state.roles || []), clonedRole] };
         }
         case 'DELETE_ROLE':
@@ -235,6 +234,34 @@ export const masterDataReducer = (state: ProjectState, action: any): ProjectStat
                 return state;
             }
             return { ...state, roles: (state.roles || []).filter(r => r.id !== action.payload.roleId) };
+
+        // --- PROCESSING METHODS ---
+        case 'ADD_PROCESSING_METHOD': {
+            const { methodData, id } = action.payload;
+            return {
+                ...state,
+                processingMethods: [
+                    ...(state.processingMethods || []),
+                    { ...methodData, id: id || crypto.randomUUID(), isSystem: false }
+                ]
+            };
+        }
+        case 'UPDATE_PROCESSING_METHOD':
+            return {
+                ...state,
+                processingMethods: (state.processingMethods || []).map(m => m.id === action.payload.methodId ? { ...m, ...action.payload.updates } : m)
+            };
+        case 'DELETE_PROCESSING_METHOD': {
+            const methodToDelete = (state.processingMethods || []).find(m => m.id === action.payload.methodId);
+            if (methodToDelete?.isSystem) {
+                alert('Cannot delete a system default processing method.');
+                return state;
+            }
+            return {
+                ...state,
+                processingMethods: (state.processingMethods || []).filter(m => m.id !== action.payload.methodId)
+            };
+        }
 
         // --- GLOBAL SETTINGS & PRICING ---
         case 'UPDATE_GLOBAL_SETTINGS':
